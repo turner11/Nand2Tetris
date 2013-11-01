@@ -284,7 +284,7 @@ namespace JackParser
         {
             XmlDocument xml = classRoot.OwnerDocument;
             //create classVarDec root element
-            XmlNode rootSubDec = xml.CreateNode(XmlNodeType.Element, ProgramStructureNodes.classVarDec.ToStringByDescription(), String.Empty);
+            XmlNode rootSubDec = xml.CreateNode(XmlNodeType.Element, ProgramStructureNodes.subroutineDec.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
             classRoot.AppendChild(rootSubDec);
 
@@ -309,7 +309,7 @@ namespace JackParser
             /*Not valid name; quit*/
             if (!isvalidName) { throw new Exception(String.Format("sub-routine name {0} is not valid", varfuncNameToken.InnerText)); }
 
-            JackParser.AddToken(rootSubDec, varfuncNameToken, String.Empty, TokenTypes.identifier, ProgramStructureNodes.subRoutineName.ToStringByDescription());
+            JackParser.AddToken(rootSubDec, varfuncNameToken, String.Empty, TokenTypes.identifier, ProgramStructureNodes.subroutineName.ToStringByDescription());
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);            
             /*(------------------------------------------------------------------------*/
@@ -319,7 +319,7 @@ namespace JackParser
             JackParser.RemoveFirstToken(tokensDoc);
             
             /*Parameter List------------------------------------------------------------------------*/
-            JackParser.GetParameterList(ref rootSubDec, ref tokensDoc);
+            JackParser.GetParameterList(rootSubDec, tokensDoc);
             
             /*)------------------------------------------------------------------------*/
             XmlNode closeBracket = JackParser.GetNextToken(tokensDoc);
@@ -333,7 +333,7 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
-            JackParser.GetParameterList(ref rootSubDec, ref tokensDoc);
+            JackParser.GetParameterList(rootSubDec, tokensDoc);
 
             /*}------------------------------------------------------------------------*/
             XmlNode closeBodyBracket = JackParser.GetNextToken(tokensDoc);
@@ -350,10 +350,30 @@ namespace JackParser
         /// </summary>
         /// <param name="rootSubDec">The root sub dec.</param>
         /// <param name="tokensDoc">The tokens doc.</param>
-        private static void GetParameterList(ref XmlNode parentNode, ref XmlDocument tokensDoc)
+        private static void GetParameterList(XmlNode parentNode, XmlDocument tokensDoc)
         {
-            XmlNode parentNodeClone = parentNode.CloneNode(true);
-            XmlDocument tokensDocClone = (XmlDocument)tokensDoc.CloneNode(true);
+            //create classVarDec root element
+            XmlNode rootPramList = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, ProgramStructureNodes.parameterList.ToStringByDescription(), String.Empty);
+            //adding the variable declaration node
+            parentNode.AppendChild(rootPramList);
+
+
+            //check if there are any parameters:
+            XmlNode nFirst = JackParser.GetNextToken(tokensDoc);
+            XmlNode nSecond = nFirst.NextSibling;
+
+            List<string> validTexts = JackParser.GetValidTypeName(nFirst.InnerText);
+            //is it a type?
+            bool hasParams = JackParser.ValidateToken(nFirst, validTexts, TokenTypes.keyword,false);
+            //is it a name
+            hasParams &= nSecond != null && JackParser.IsVariableName(nSecond.InnerText);
+            if (!hasParams)
+            {
+                return;
+            }
+
+
+
             try
             {
                 
@@ -364,7 +384,7 @@ namespace JackParser
                     /*var type*/
                     XmlNode varTypeToken = JackParser.GetNextToken(tokensDoc);
                     List<string> possibleTexts = JackParser.GetValidTypeName(varTypeToken.InnerText);
-                    JackParser.AddToken(parentNode, varTypeToken, possibleTexts, TokenTypes.keyword, ProgramStructureNodes.type.ToStringByDescription());
+                    JackParser.AddToken(rootPramList, varTypeToken, possibleTexts, TokenTypes.keyword, ProgramStructureNodes.type.ToStringByDescription());
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
 
@@ -374,7 +394,7 @@ namespace JackParser
                     /*Not valid name; quit*/
                     if (!isvalidName) { throw new Exception(String.Format("variable name {0} is not valid", varNameToken.InnerText)); }
 
-                    JackParser.AddToken(parentNode, varNameToken, String.Empty, TokenTypes.identifier, null);
+                    JackParser.AddToken(rootPramList, varNameToken, String.Empty, TokenTypes.identifier, null);
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
                     if (JackParser.GetFirstTokenText(tokensDoc) == ",")
@@ -382,7 +402,7 @@ namespace JackParser
                         isMiltipleVars = true;
 
                         XmlNode commaToken = JackParser.GetNextToken(tokensDoc);
-                        JackParser.AddToken(parentNode, commaToken, ",", TokenTypes.symbol, null);
+                        JackParser.AddToken(rootPramList, commaToken, ",", TokenTypes.symbol, null);
                         //token was handled, remove it
                         JackParser.RemoveFirstToken(tokensDoc);
                     }
@@ -397,9 +417,6 @@ namespace JackParser
                 //Idea: just add function: isParameterlist...
                 ex.ToString();
 
-                //parameters list might be empty. if we failed to get one, rollback to original state
-                parentNode = parentNodeClone;
-                tokensDoc = tokensDocClone;
             }
         }
 
@@ -461,11 +478,12 @@ namespace JackParser
         /// 
         private static bool IsIdentifier(string candidate)
         {
+            string cleanCandidate = candidate.Trim();
             Regex regex = new Regex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.None);
-            bool isLegalIdentifier = regex.Match(candidate.Trim()).Success;
+            bool isLegalIdentifier = regex.Match(cleanCandidate).Success;
 
             //makes sense that a keyword cannot be an identifer, but it does not seem to be the case according to class PPT
-            //isLegalIdentifier &= !JackParser._allKeyWords.Contains(candidate);
+            isLegalIdentifier &= !JackParser._allKeyWords.Contains(cleanCandidate);
 
             return isLegalIdentifier;
         }
@@ -572,20 +590,8 @@ namespace JackParser
         private static void AddToken(XmlNode parentNode, XmlNode token, IEnumerable<string> possibleText, TokenTypes expectedNodeType, string encapsulatingTagText)
         {
             #region validations
-            /*is text valid?*/
-            List<string> cleanPossibleText = possibleText.Where(s => !String.IsNullOrWhiteSpace(s)).ToList();
-            if (possibleText != null && cleanPossibleText.Count() > 0)
-            {
-                string errorMsg = String.Format("Expected node to have inner text of: {0}", String.Join("|", cleanPossibleText));
-                JackParser.AssertNodeText(token, cleanPossibleText, errorMsg);
-
-            }
-
-
-            string msg = String.Format("Expected node to be of type: {0}", expectedNodeType.ToStringByDescription());
-            JackParser.AssertNodeType(token, expectedNodeType, msg);
-
-
+            bool throwExp = true;
+            JackParser.ValidateToken(token, possibleText, expectedNodeType, throwExp);
             #endregion
             //adding class token
             XmlNode importedToken = parentNode.OwnerDocument.ImportNode(token, true);
@@ -601,6 +607,24 @@ namespace JackParser
 
             (surroundingNode ?? parentNode).AppendChild(importedToken);
              
+        }
+
+        private static bool ValidateToken(XmlNode token, IEnumerable<string> possibleText, TokenTypes expectedNodeType ,bool throwException)
+        {
+            bool valid = true;
+            /*is text valid?*/
+            List<string> cleanPossibleText = possibleText.Where(s => !String.IsNullOrWhiteSpace(s)).ToList();
+            if (possibleText != null && cleanPossibleText.Count() > 0)
+            {
+                string errorMsg = String.Format("Expected node to have inner text of: {0}", String.Join("|", cleanPossibleText));
+                valid &= JackParser.AssertNodeText(token, cleanPossibleText, errorMsg, throwException);
+
+            }
+
+
+            string msg = String.Format("Expected node to be of type: {0}", expectedNodeType.ToStringByDescription());
+             valid &= JackParser.AssertNodeType(token, expectedNodeType, msg, throwException);
+             return valid;
         }
 
         /// <summary>
@@ -625,9 +649,9 @@ namespace JackParser
         /// <param name="expectedText">The expected text.</param>
         /// <param name="errorMessage">The error message in exception, if thrown.</param>
         /// <exception cref="System.Exception">Exception with epecified message</exception>
-        private static void AssertNodeText(XmlNode node, string expectedText, string errorMessage)
+        private static bool AssertNodeText(XmlNode node, string expectedText, string errorMessage, bool throwException)
         {
-            JackParser.AssertNodeText(node, new List<string> { expectedText }, errorMessage);
+            return JackParser.AssertNodeText(node, new List<string> { expectedText }, errorMessage, throwException);
         }
 
         /// <summary>
@@ -637,13 +661,14 @@ namespace JackParser
         /// <param name="possibleText">The list of possible text to match.</param>
         /// <param name="errorMessage">The error message in exception, if thrown.</param>
         /// <exception cref="System.Exception">Exception with epecified message</exception>
-        private static void AssertNodeText(XmlNode node, List<string> possibleText, string errorMessage)
+        private static bool AssertNodeText(XmlNode node, List<string> possibleText, string errorMessage, bool throwException)
         {
             bool foundMatch = possibleText.Any(str => String.Equals(node.InnerText.Trim(), str.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (!foundMatch)
+            if (throwException && !foundMatch)
             {
                 throw new Exception(errorMessage);
             }
+            return foundMatch;
         }
 
         /// <summary>
@@ -652,9 +677,9 @@ namespace JackParser
         /// <param name="expression">if is <c>false</c> will throw an exception.</param>
         /// <param name="errorMessage">The error message in exception, if thrown.</param>
         /// <exception cref="System.Exception">Exception with epecified message</exception>
-        private static void AssertNodeType(XmlNode node, TokenTypes expectedType, string errorMessage)
+        private static bool AssertNodeType(XmlNode node, TokenTypes expectedType, string errorMessage, bool throwException)
         {
-            AssertNodeType(node, new List<TokenTypes> { expectedType }, errorMessage);
+            return AssertNodeType(node, new List<TokenTypes> { expectedType }, errorMessage,throwException);
         }
         /// <summary>
         /// Asserts the specified expression.
@@ -662,13 +687,14 @@ namespace JackParser
         /// <param name="expression">if is <c>false</c> will throw an exception.</param>
         /// <param name="errorMessage">The error message in exception, if thrown.</param>
         /// <exception cref="System.Exception">Exception with epecified message</exception>
-        private static void AssertNodeType(XmlNode node, List<TokenTypes> expectedType, string errorMessage)
+        private static bool AssertNodeType(XmlNode node, List<TokenTypes> expectedType, string errorMessage, bool throwException)
         {
             bool isMatchesAny = expectedType.Any(et => String.Equals(node.Name.Trim(), et.ToStringByDescription(), StringComparison.OrdinalIgnoreCase));
-            if (!isMatchesAny)
+            if (throwException && !isMatchesAny)
             {
                 throw new Exception(errorMessage);
             }
+            return isMatchesAny;
         }
 
         /// <summary>
@@ -683,18 +709,18 @@ namespace JackParser
             classVarDec,
             [Description("type")]
             @type,
-            [Description("subRoutineDec")]
-            subRoutineDec,
+            [Description("subroutineDec")]
+            subroutineDec,
             [Description("parameterList")]
             parameterList,
-            [Description("subRoutineBody")]
-            subRoutineBody,
+            [Description("subroutineBody")]
+            subroutineBody,
             [Description("varDec")]
             varDec,
             [Description("className")]
             className,
-            [Description("subRoutineName")]
-            subRoutineName,
+            [Description("subroutineName")]
+            subroutineName,
             [Description("varName")]
             varName,
 
