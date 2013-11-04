@@ -89,7 +89,7 @@ namespace JackParser
                 results.Add(currresult);
             }
 
-            return String.Join("\n", results);
+            return String.Join("\n", results.ToArray());
 
         }
 
