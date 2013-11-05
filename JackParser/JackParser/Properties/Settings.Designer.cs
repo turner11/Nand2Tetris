@@ -22,5 +22,17 @@ namespace JackParser.Properties {
                 return defaultInstance;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("C:\\JackParser\\Tokens.xml")]
+        public string TokenFile {
+            get {
+                return ((string)(this["TokenFile"]));
+            }
+            set {
+                this["TokenFile"] = value;
+            }
+        }
     }
 }

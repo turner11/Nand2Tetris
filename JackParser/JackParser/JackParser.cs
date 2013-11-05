@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -40,6 +41,14 @@ namespace JackParser
         static ReadOnlyCollection<string> _unariOparations =
             new ReadOnlyCollection<string>(new List<String> { "~", "-", "#" });
         #endregion
+
+        /// <summary>
+        /// for debugging, helps to keep track
+        /// </summary>
+        static int _TokenRowNumber = 1;
+        static string _DEBUG_xmlString;
+        static int _DEBUG_xmlRowNumber = 0;
+
 
         #region C'tor
         static JackParser()
@@ -107,6 +116,7 @@ namespace JackParser
         {
             XmlDocument xml;
             XmlDocument tokenClone = (XmlDocument)tokensDoc.Clone();
+            tokenClone.NodeRemoved += tokenClone_NodeRemoved;
             JackParser.GetClass(tokenClone, out xml);
 
             //XmlNodeList tokens = tokensDoc.FirstChild.ChildNodes;
@@ -120,6 +130,11 @@ namespace JackParser
 
             return xml;
 
+        }
+
+        static void tokenClone_NodeRemoved(object sender, XmlNodeChangedEventArgs e)
+        {
+            JackParser._TokenRowNumber++;
         }
 
         /// <summary>
@@ -142,6 +157,9 @@ namespace JackParser
         private static void GetClass(XmlDocument tokensDoc, out XmlDocument xml)
         {
             xml = new XmlDocument();
+            //for debugging
+            xml.NodeInserted += xml_NodeInserted;
+
             //create class root element
             XmlNode classRoot = xml.CreateNode(XmlNodeType.Element, OutputStructureNodes.@class.ToString(), String.Empty);
             //adding the class root node
@@ -179,6 +197,25 @@ namespace JackParser
             return;
 
 
+        }
+
+        static void xml_NodeInserted(object sender, XmlNodeChangedEventArgs e)
+        {
+            if (e.Node != null)
+            {
+
+            }
+            UpdateString(e.Node.OwnerDocument);
+        }
+
+        [Conditional("DEBUG")]
+        private static void UpdateString(XmlDocument xmlDocument)
+        {
+            if (xmlDocument != null)
+            {
+                JackParser._DEBUG_xmlString = xmlDocument.ToXmlString();
+                _DEBUG_xmlRowNumber++;
+            }
         }
 
         /// <summary>
@@ -222,7 +259,7 @@ namespace JackParser
 
             List<string> possibleTexts = JackParser.GetValidTypeName(varTypeToken.InnerText);
 
-            JackParser.AddToken(rootVarDec, varTypeToken, possibleTexts, TokenTypes.keyword, OutputStructureNodes.type.ToStringByDescription());
+            JackParser.AddToken(rootVarDec, varTypeToken, possibleTexts, new List<Enum> { TokenTypes.identifier, TokenTypes.keyword }, OutputStructureNodes.type.ToStringByDescription());
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
@@ -272,7 +309,7 @@ namespace JackParser
             //adding the variable declaration node
             classRoot.AppendChild(rootSubDec);
 
-            JackParser.AppendFunctionDecHeader(tokensDoc, rootSubDec);
+            JackParser.AppendFunctionDecHeader(rootSubDec, tokensDoc);
 
             JackParser.AppendFunctionDecBody(tokensDoc, rootSubDec);
         }
@@ -284,19 +321,24 @@ namespace JackParser
         /// <param name="rootSubDec">The root sub dec.</param>
         private static void AppendFunctionDecBody(XmlDocument tokensDoc, XmlNode rootSubDec)
         {
+            XmlDocument xml = rootSubDec.OwnerDocument;
+            //create classVarDec root element
+            XmlNode rootSubroutineBodyNode = xml.CreateNode(XmlNodeType.Element, OutputStructureNodes.subroutineBody.ToStringByDescription(), String.Empty);
+            //adding the variable declaration node
+            rootSubDec.AppendChild(rootSubroutineBodyNode);
+
+
             /*{------------------------------------------------------------------------*/
             XmlNode openBodyBracket = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootSubDec, openBodyBracket, "{", TokenTypes.symbol, null);
+            JackParser.AddToken(rootSubroutineBodyNode, openBodyBracket, "{", TokenTypes.symbol, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
-            JackParser.GetParameterList(rootSubDec, tokensDoc);
-
-            JackParser.AppendStatements(rootSubDec, tokensDoc);
+            JackParser.AppendStatements(rootSubroutineBodyNode, tokensDoc);
 
             /*}------------------------------------------------------------------------*/
             XmlNode closeBodyBracket = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootSubDec, closeBodyBracket, "}", TokenTypes.symbol, null);
+            JackParser.AddToken(rootSubroutineBodyNode, closeBodyBracket, "}", TokenTypes.symbol, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
         }
@@ -307,7 +349,7 @@ namespace JackParser
         /// <param name="tokensDoc">The tokens doc.</param>
         /// <param name="rootSubDec">The root sub dec.</param>
         /// <exception cref="System.Exception"></exception>
-        private static void AppendFunctionDecHeader(XmlDocument tokensDoc, XmlNode rootSubDec)
+        private static void AppendFunctionDecHeader(XmlNode rootSubDec, XmlDocument tokensDoc)
         {
             /*constructor | function | method------------------------------------------------------------------------*/
             XmlNode tFuncType = JackParser.GetNextToken(tokensDoc);
@@ -353,21 +395,68 @@ namespace JackParser
         /// Appends the expression in brackets: '(' Expression ')'
         /// </summary>
         /// <param name="tokensDoc">The tokens doc.</param>
-        /// <param name="rootIfNode">The root if node.</param>
-        private static void AppendExpressionInBrackets(XmlDocument tokensDoc, XmlNode rootIfNode)
+        /// <param name="rootNode">The root node.</param>
+        private static void AppendExpressionInBrackets(XmlNode rootNode, XmlDocument tokensDoc, bool expressionList)
         {
             /*(*/
             XmlNode bracketStartToken = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootIfNode, bracketStartToken, "(", TokenTypes.symbol, null);
+            JackParser.AddToken(rootNode, bracketStartToken, "(", TokenTypes.symbol, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
-
-            JackParser.AppendExpression(rootIfNode, tokensDoc);
+            if (expressionList)
+            {
+                JackParser.AppendExpressionList(rootNode, tokensDoc);
+            }
+            else
+            {
+                JackParser.AppendExpression(rootNode, tokensDoc);
+            }
+            
 
 
             /*)*/
             XmlNode bracketEndToken = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootIfNode, bracketEndToken, ")", TokenTypes.symbol, null);
+            JackParser.AddToken(rootNode, bracketEndToken, ")", TokenTypes.symbol, null);
+            //token was handled, remove it
+            JackParser.RemoveFirstToken(tokensDoc);
+        }
+
+        /// <summary>
+        /// Appends the uary op and term token => unaryOp term.
+        /// </summary>
+        /// <param name="rootTermToken">The root term token.</param>
+        /// <param name="tokensDoc">The tokens doc.</param>
+        /// <exception cref="System.NotImplementedException"></exception>
+        private static void AppendUaryOpAndTerm(XmlNode rootTermToken, XmlDocument tokensDoc)
+        {
+            /*UnaryOp*/
+            XmlNode unaryOpSymbol = JackParser.GetNextToken(tokensDoc);
+            JackParser.AddToken(rootTermToken, unaryOpSymbol, JackParser._unariOparations, TokenTypes.symbol, OutputStructureNodes.term.ToStringByDescription());
+            /*Term*/
+            JackParser.AppendTerm(rootTermToken, tokensDoc);
+
+        }
+
+
+        /// <summary>
+        /// Gets the expression in indexer brackets => '[' expression']'.
+        /// </summary>
+        /// <param name="parentNode">The parent node.</param>
+        /// <param name="tokensDoc">The tokens doc.</param>
+        private static void GetExpressionInIndexerBrackets(XmlNode parentNode, XmlDocument tokensDoc)
+        {
+            XmlNode indexerStartToken = JackParser.GetNextToken(tokensDoc);
+            /*[*/
+            JackParser.AddToken(parentNode, indexerStartToken, "[", TokenTypes.symbol, null);
+            //token was handled, remove it
+            JackParser.RemoveFirstToken(tokensDoc);
+
+            JackParser.AppendExpression(parentNode, tokensDoc);
+
+
+            /*]*/
+            XmlNode indexerEndToken = JackParser.GetNextToken(tokensDoc);
+            JackParser.AddToken(parentNode, indexerEndToken, "]", TokenTypes.symbol, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
         }
@@ -379,9 +468,13 @@ namespace JackParser
         /// <param name="tokensDoc">The tokens doc.</param>
         private static void AppendExpression(XmlNode parentNode, XmlDocument tokensDoc)
         {
+            /*term root*/
+            XmlNode expressionNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.expression.ToStringByDescription(), String.Empty);
+            //adding the variable declaration node
+            parentNode.AppendChild(expressionNode);
 
-            JackParser.AppendTerm(parentNode, tokensDoc);
-            JackParser.AppendOpTerms(parentNode, tokensDoc);
+            JackParser.AppendTerm(expressionNode, tokensDoc);
+            JackParser.AppendOpTerms(expressionNode, tokensDoc);
         }
         /// <summary>
         /// Appends the expression list that is composed from nodes at top of tokens Doc to the parent node. Nodes will be removed from tokenns doc.
@@ -393,24 +486,25 @@ namespace JackParser
 
 
             /*Expressions List (could be 0 or more)------------------------------------------------------------------------*/
-            //JackParser.GetParameterList(parentNode, tokensDoc);
+            ///create class root element
+            XmlNode rootParamList = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.expressionList.ToStringByDescription(), String.Empty);
+            //adding the class root node
+            parentNode.AppendChild(rootParamList);
             bool isFirst = true;
             while (JackParser.IsNextTokenTerm(tokensDoc))
             {
                 if (!isFirst)
                 {
                     XmlNode commaToken = JackParser.GetNextToken(tokensDoc);
-                    JackParser.AddToken(parentNode, commaToken, ",", TokenTypes.symbol, null);
+                    JackParser.AddToken(rootParamList, commaToken, ",", TokenTypes.symbol, null);
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
                 }
-                JackParser.AppendExpression(parentNode, tokensDoc);
+                JackParser.AppendExpression(rootParamList, tokensDoc);
 
 
                 isFirst = false;
             }
-
-
         }
 
 
@@ -440,10 +534,104 @@ namespace JackParser
         /// <param name="tokensDoc">The tokens doc.</param>
         private static void AppendTerm(XmlNode parentNode, XmlDocument tokensDoc)
         {
-            //TODO: to be implemented: integerConstant stringConstant keywordConstant varName
-            throw new NotImplementedException();
+
+
+            XmlNode termToken = JackParser.GetNextToken(tokensDoc);
+            string text = JackParser.GetFirstTokenText(tokensDoc);
+
+            XmlNode rootTermToken;
             TermTypes ttype = JackParser.GetNextTokenTermType(tokensDoc);
+            switch (ttype)
+            {
+                case TermTypes.None:
+                    throw new Exception("next node is not a term!");
+                case TermTypes.integerConstant:
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+                    JackParser.AddToken(rootTermToken, termToken, TermTypes.integerConstant, null);
+                    //token was handled, remove it
+                    JackParser.RemoveFirstToken(tokensDoc);
+                    break;
+                case TermTypes.stringConstant:
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+                    JackParser.AddToken(rootTermToken, termToken, TermTypes.stringConstant, null);
+                    //token was handled, remove it
+                    JackParser.RemoveFirstToken(tokensDoc);
+                    break;
+                case TermTypes.keywordConstant:
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+                    JackParser.AddToken(rootTermToken, rootTermToken, TokenTypes.keyword, TermTypes.keywordConstant.ToStringByDescription());
+                    //token was handled, remove it
+                    JackParser.RemoveFirstToken(tokensDoc);
+                    break;
+                case TermTypes.varName:
+                    bool isVarName = JackParser.IsVariableName(text);
+                    if (!isVarName) { throw new Exception("Got bad variable name"); }
+
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+
+                    JackParser.AddToken(rootTermToken, termToken, TokenTypes.identifier, null);
+                    //token was handled, remove it
+                    JackParser.RemoveFirstToken(tokensDoc);
+                    break;
+                case TermTypes.Array:
+
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+                    bool isVariableName = JackParser.IsVariableName(text);
+                    if (!isVariableName) { throw new Exception("Got bad variable name for array"); }
+                    JackParser.AddToken(rootTermToken, termToken, TokenTypes.identifier, null);
+                    //token was handled, remove it
+                    JackParser.RemoveFirstToken(tokensDoc);
+                    JackParser.GetExpressionInIndexerBrackets(rootTermToken, tokensDoc);
+                    break;
+                case TermTypes.subRoutineCall:
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+                    JackParser.AppendSubroutineCall(rootTermToken, tokensDoc);
+                    break;
+                case TermTypes.ExpressionInBrackets:
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+                    JackParser.AppendExpressionInBrackets(rootTermToken, tokensDoc,false);
+                    break;
+                case TermTypes.UnaryOpAndTerm:
+                    /*term root*/
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
+                    //adding the variable declaration node
+                    parentNode.AppendChild(rootTermToken);
+
+                    JackParser.AppendUaryOpAndTerm(rootTermToken, tokensDoc);
+                    break;
+                default:
+                    throw new Exception("Unknown term type: " + ttype.ToStringByDescription());
+            }
         }
+
 
         /// <summary>
         /// Gets the parameter list and adds it to <see cref="parentNode"/> .
@@ -532,7 +720,7 @@ namespace JackParser
         {
             bool isClassName = JackParser.IsClassName(classNameCandidate);
             List<string> possibleTexts = new List<string>(JackParser._variablesTypes);
-            if (isClassName) { possibleTexts.Add(classNameCandidate); }
+            if (isClassName) { possibleTexts.Add(classNameCandidate.Trim()); }
             return possibleTexts;
         }
         /// <summary>
@@ -552,27 +740,42 @@ namespace JackParser
         /// <summary>
         /// Appends the subroutine call.
         /// </summary>
-        /// <param name="rootdoNode">The rootdo node.</param>
+        /// <param name="parentNode">The rootdo node.</param>
         /// <param name="tokensDoc">The tokens doc.</param>
-        private static void AppendSubroutineCall(XmlNode rootdoNode, XmlDocument tokensDoc)
+        private static void AppendSubroutineCall(XmlNode parentNode, XmlDocument tokensDoc)
         {
             OutputStructureNodes sRoutineOwner;
             bool isSubroutineCall = JackParser.IsSubroutineCallBegining(tokensDoc, out sRoutineOwner);
-            if (sRoutineOwner == OutputStructureNodes.className)
+            if (isSubroutineCall)
             {
-                JackParser.AppendSubroutineAndExpressions(rootdoNode, tokensDoc);
-            }
-            else if (sRoutineOwner == OutputStructureNodes.subroutineName)
-            {
+                //create subroutine element
+                XmlNode subRoutineNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.subroutineCall.ToStringByDescription(), String.Empty);
+                //adding the variable declaration node
+                parentNode.AppendChild(subRoutineNode);
 
-                JackParser.AppendSubroutineAndExpressions(rootdoNode, tokensDoc);
-            }
-            else
-            {
-                throw new Exception("Unknown format for subroutin");
-            }
+                if (sRoutineOwner == OutputStructureNodes.className || sRoutineOwner == OutputStructureNodes.varName)
+                {
+                    XmlNode classOrVarNameNode = JackParser.GetNextToken(tokensDoc);
+                    string nextText = JackParser.GetFirstTokenText(tokensDoc);
+                    bool isValidName = JackParser.IsIdentifier(nextText);
 
-            throw new NotImplementedException();
+                    if (!isValidName) { throw new Exception("Invalid name for subroutine caller"); }
+
+                    JackParser.AddToken(subRoutineNode, classOrVarNameNode, TokenTypes.identifier, null);
+                    //token was handled, remove it
+                    JackParser.RemoveFirstToken(tokensDoc);
+                    JackParser.AppendSubroutineAndExpressions(subRoutineNode, tokensDoc);
+                }
+                else if (sRoutineOwner == OutputStructureNodes.subroutineName)
+                {
+
+                    JackParser.AppendSubroutineAndExpressions(subRoutineNode, tokensDoc);
+                }
+                else
+                {
+                    throw new Exception("Unknown format for subroutin");
+                }
+            }
         }
 
         /// <summary>
@@ -600,7 +803,7 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
-            JackParser.AppendExpression(subroutineCallRootNode, tokensDoc);
+            JackParser.AppendExpressionInBrackets(subroutineCallRootNode, tokensDoc, true);
 
         }
 
@@ -644,7 +847,7 @@ namespace JackParser
             switch (firstStatementNodeString)
             {
                 case "let":
-                    JackParser.AppendLetStatement(parentNode, tokensDoc);
+                    JackParser.AppendLetStatement(rootStatement, tokensDoc);
                     break;
                 case "if":
                     JackParser.AppendIfStatement(parentNode, tokensDoc);
@@ -672,7 +875,7 @@ namespace JackParser
         private static void AppendReturnStatement(XmlNode parentNode, XmlDocument tokensDoc)
         {
             //create Statements root element
-            XmlNode rootReturnNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.ifStatement.ToStringByDescription(), String.Empty);
+            XmlNode rootReturnNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.returnStatement.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
             parentNode.AppendChild(rootReturnNode);
 
@@ -696,7 +899,7 @@ namespace JackParser
         private static void AppendDoStatement(XmlNode parentNode, XmlDocument tokensDoc)
         {
             //create Statements root element
-            XmlNode rootdoNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.ifStatement.ToStringByDescription(), String.Empty);
+            XmlNode rootdoNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.doStatement.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
             parentNode.AppendChild(rootdoNode);
 
@@ -709,7 +912,7 @@ namespace JackParser
         private static void AppendWhileStatement(XmlNode parentNode, XmlDocument tokensDoc)
         {
             //create Statements root element
-            XmlNode rootWhileNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.ifStatement.ToStringByDescription(), String.Empty);
+            XmlNode rootWhileNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.whileStatement.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
             parentNode.AppendChild(rootWhileNode);
 
@@ -719,7 +922,7 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
             //'(' Expression ')'
-            JackParser.AppendExpressionInBrackets(tokensDoc, rootWhileNode);
+            JackParser.AppendExpressionInBrackets(rootWhileNode, tokensDoc, false);
 
             //'{' Statements '}'
             JackParser.AppendStatementsInCurlyBrackets(rootWhileNode, tokensDoc);
@@ -738,7 +941,7 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
             //'(' Expression ')'
-            JackParser.AppendExpressionInBrackets(tokensDoc, rootIfNode);
+            JackParser.AppendExpressionInBrackets(rootIfNode, tokensDoc, false);
 
             //'{' Statements '}'
             JackParser.AppendStatementsInCurlyBrackets(rootIfNode, tokensDoc);
@@ -784,7 +987,7 @@ namespace JackParser
         {
 
             //create Statements root element
-            XmlNode rootLetNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.statements.ToStringByDescription(), String.Empty);
+            XmlNode rootLetNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.letStatement.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
             parentNode.AppendChild(rootLetNode);
             /*Let*/
@@ -805,22 +1008,10 @@ namespace JackParser
 
             /*Indexer*/
 
-            XmlNode indexerStartToken = JackParser.GetNextToken(tokensDoc);
-            if (indexerStartToken.InnerText.Trim() == "[")
+            string nextText = JackParser.GetFirstTokenText(tokensDoc);
+            if (nextText == "[")
             {
-                /*[*/
-                JackParser.AddToken(rootLetNode, indexerStartToken, "[", TokenTypes.symbol, null);
-                //token was handled, remove it
-                JackParser.RemoveFirstToken(tokensDoc);
-
-                JackParser.AppendExpression(rootLetNode, tokensDoc);
-
-
-                /*]*/
-                XmlNode indexerEndToken = JackParser.GetNextToken(tokensDoc);
-                JackParser.AddToken(rootLetNode, indexerEndToken, "]", TokenTypes.symbol, null);
-                //token was handled, remove it
-                JackParser.RemoveFirstToken(tokensDoc);
+                JackParser.GetExpressionInIndexerBrackets(rootLetNode, tokensDoc);
             }
 
             /*=*/
@@ -829,7 +1020,7 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
-            JackParser.AppendExpressionList(rootLetNode, tokensDoc);
+            JackParser.AppendExpression(rootLetNode, tokensDoc);
 
 
             /*;*/
@@ -839,6 +1030,8 @@ namespace JackParser
             JackParser.RemoveFirstToken(tokensDoc);
 
         }
+
+
         #endregion
 
         #region Token handeling
@@ -852,10 +1045,10 @@ namespace JackParser
 
             if (JackParser.IsNextNodeTerm_integerConstant(tokensDoc)) { return TermTypes.integerConstant; }
             if (JackParser.IsNextNodeTerm_stringConstant(tokensDoc)) { return TermTypes.stringConstant; }
-            if (JackParser.IsNextNodeTerm_keywoedConstant(tokensDoc)) { return TermTypes.keywoedConstant; }
+            if (JackParser.IsNextNodeTerm_keywoedConstant(tokensDoc)) { return TermTypes.keywordConstant; }
+            if (JackParser.IsNextNodeTerm_subRoutineCall(tokensDoc)) { return TermTypes.subRoutineCall; }//should be before var name
             if (JackParser.IsNextNodeTerm_varName(tokensDoc)) { return TermTypes.varName; }
             if (JackParser.IsNextNodeTerm_Array(tokensDoc)) { return TermTypes.Array; }
-            if (JackParser.IsNextNodeTerm_subRoutineCall(tokensDoc)) { return TermTypes.subRoutineCall; }
             if (JackParser.IsNextNodeTerm_ExpressionInBrackets(tokensDoc)) { return TermTypes.ExpressionInBrackets; }
             if (JackParser.IsNextNodeTerm_UnaryOpAndTerm(tokensDoc)) { return TermTypes.UnaryOpAndTerm; }
 
@@ -930,7 +1123,7 @@ namespace JackParser
         {
             XmlNode retNode = JackParser.GetNextToken(tokensDoc);
             index--; //we have extracted 1...
-            for (int i = 0; i < index && i > 0 && retNode != null; i++)
+            for (int i = 0; i < index && i >= 0 && retNode != null; i++)
             {
                 retNode = retNode.NextSibling;
             }
@@ -944,7 +1137,7 @@ namespace JackParser
         /// <param name="token">The token node to be added.</param>
         /// <param name="expectedNodeInnerText">The expected node inner text.</param>
         /// <param name="expectedNodeType">Expected type of the node.</param>
-        private static void AddToken(XmlNode parentNode, XmlNode token, TokenTypes expectedNodeType, string encapsulatingTagText)
+        private static void AddToken(XmlNode parentNode, XmlNode token, Enum expectedNodeType, string encapsulatingTagText)
         {
             JackParser.AddToken(parentNode, token, String.Empty, expectedNodeType, encapsulatingTagText);
         }
@@ -956,7 +1149,7 @@ namespace JackParser
         /// <param name="token">The token node to be added.</param>
         /// <param name="expectedNodeInnerText">The expected node inner text.</param>
         /// <param name="expectedNodeType">Expected type of the node.</param>
-        private static void AddToken(XmlNode parentNode, XmlNode token, OutputStructureNodes expectedNodeInnerText, TokenTypes expectedNodeType, string encapsulatingTagText)
+        private static void AddToken(XmlNode parentNode, XmlNode token, Enum expectedNodeInnerText, Enum expectedNodeType, string encapsulatingTagText)
         {
             JackParser.AddToken(parentNode, token, expectedNodeInnerText.ToString(), expectedNodeType, encapsulatingTagText);
         }
@@ -968,7 +1161,7 @@ namespace JackParser
         /// <param name="token">The token node to be added.</param>
         /// <param name="expectedNodeInnerText">The expected node inner text.</param>
         /// <param name="expectedNodeType">Expected type of the node.</param>
-        private static void AddToken(XmlNode parentNode, XmlNode token, string expectedText, TokenTypes expectedNodeType, string encapsulatingTagText)
+        private static void AddToken(XmlNode parentNode, XmlNode token, string expectedText, Enum expectedNodeType, string encapsulatingTagText)
         {
             JackParser.AddToken(parentNode, token, new List<string> { expectedText }, expectedNodeType, encapsulatingTagText);
         }
@@ -979,11 +1172,23 @@ namespace JackParser
         /// <param name="token">The token node to be added.</param>
         /// <param name="expectedNodeInnerText">The expected node inner text.</param>
         /// <param name="expectedNodeType">Expected type of the node.</param>
-        private static void AddToken(XmlNode parentNode, XmlNode token, IEnumerable<string> possibleText, TokenTypes expectedNodeType, string encapsulatingTagText)
+        private static void AddToken(XmlNode parentNode, XmlNode token, IEnumerable<string> possibleText, Enum expectedNodeType, string encapsulatingTagText)
+        {
+            JackParser.AddToken(parentNode, token, possibleText, new List<Enum> { expectedNodeType }, encapsulatingTagText);
+        }
+
+        /// <summary>
+        /// Adds the class token to class root.
+        /// </summary>
+        /// <param name="parentNode">The node to add the token to.</param>
+        /// <param name="token">The token node to be added.</param>
+        /// <param name="expectedNodeInnerText">The expected node inner text.</param>
+        /// <param name="expectedNodeType">Expected type of the node.</param>
+        private static void AddToken(XmlNode parentNode, XmlNode token, IEnumerable<string> possibleText, IEnumerable<Enum> expectedNodeTypes, string encapsulatingTagText)
         {
             #region validations
             bool throwExp = true;
-            JackParser.ValidateToken(token, possibleText, expectedNodeType, throwExp);
+            JackParser.ValidateToken(token, possibleText, expectedNodeTypes, throwExp);
             #endregion
             //adding class token
             XmlNode importedToken = parentNode.OwnerDocument.ImportNode(token, true);
@@ -1053,9 +1258,9 @@ namespace JackParser
         /// <param name="expression">if is <c>false</c> will throw an exception.</param>
         /// <param name="errorMessage">The error message in exception, if thrown.</param>
         /// <exception cref="System.Exception">Exception with epecified message</exception>
-        private static bool AssertNodeType(XmlNode node, TokenTypes expectedType, string errorMessage, bool throwException)
+        private static bool AssertNodeType(XmlNode node, Enum expectedType, string errorMessage, bool throwException)
         {
-            return AssertNodeType(node, new List<TokenTypes> { expectedType }, errorMessage, throwException);
+            return JackParser.AssertNodeType(node, new List<Enum> { expectedType }, errorMessage, throwException);
         }
         /// <summary>
         /// Asserts the specified expression.
@@ -1063,7 +1268,7 @@ namespace JackParser
         /// <param name="expression">if is <c>false</c> will throw an exception.</param>
         /// <param name="errorMessage">The error message in exception, if thrown.</param>
         /// <exception cref="System.Exception">Exception with epecified message</exception>
-        private static bool AssertNodeType(XmlNode node, List<TokenTypes> expectedType, string errorMessage, bool throwException)
+        private static bool AssertNodeType(XmlNode node, IEnumerable<Enum> expectedType, string errorMessage, bool throwException)
         {
             bool isMatchesAny = expectedType.Any(et => String.Equals(node.Name.Trim(), et.ToStringByDescription(), StringComparison.OrdinalIgnoreCase));
             if (throwException && !isMatchesAny)
@@ -1073,21 +1278,27 @@ namespace JackParser
             return isMatchesAny;
         }
 
-        private static bool ValidateToken(XmlNode token, IEnumerable<string> possibleText, TokenTypes expectedNodeType, bool throwException)
+
+        private static bool ValidateToken(XmlNode token, IEnumerable<string> possibleText, Enum expectedNodeType, bool throwException)
+        {
+            return JackParser.ValidateToken(token, possibleText, new List<Enum> { expectedNodeType }, throwException);
+        }
+        private static bool ValidateToken(XmlNode token, IEnumerable<string> possibleText, IEnumerable<Enum> expectedNodeTypes, bool throwException)
         {
             bool valid = true;
             /*is text valid?*/
             List<string> cleanPossibleText = possibleText.Where(s => !String.IsNullOrWhiteSpace(s)).ToList();
             if (possibleText != null && cleanPossibleText.Count() > 0)
             {
-                string errorMsg = String.Format("Expected node to have inner text of: {0}", String.Join("|", cleanPossibleText));
+                string errorMsg = String.Format("Expected node to have inner text of: '{0}' but found '{1}'", String.Join("|", cleanPossibleText), token.InnerText);
                 valid &= JackParser.AssertNodeText(token, cleanPossibleText, errorMsg, throwException);
 
             }
 
 
-            string msg = String.Format("Expected node to be of type: {0}", expectedNodeType.ToStringByDescription());
-            valid &= JackParser.AssertNodeType(token, expectedNodeType, msg, throwException);
+            object[] args = expectedNodeTypes.Select(t => t.ToStringByDescription()).ToArray();
+            string msg = String.Format("Expected node to be of type: {0}", String.Join(" | ", args));
+            valid &= JackParser.AssertNodeType(token, expectedNodeTypes, msg, throwException);
             return valid;
         }
         #endregion
@@ -1099,7 +1310,7 @@ namespace JackParser
             TermTypes termType = JackParser.GetNextTokenTermType(tokensDoc);
             return termType != TermTypes.None;
         }
-        
+
         /// <summary>
         /// Determines whether the specified candidate is legal Sub Routine Name.
         /// </summary>
@@ -1291,8 +1502,8 @@ namespace JackParser
 
         private static bool IsNextNodeTerm_UnaryOpAndTerm(XmlDocument tokensDoc)
         {
-              string text = JackParser.GetFirstTokenText(tokensDoc);
-              return JackParser._unariOparations.Contains(text);
+            string text = JackParser.GetFirstTokenText(tokensDoc);
+            return JackParser._unariOparations.Contains(text);
         }
 
         private static bool IsNextNodeTerm_ExpressionInBrackets(XmlDocument tokensDoc)
@@ -1308,22 +1519,32 @@ namespace JackParser
             bool isVarName = JackParser.IsVariableName(text);
             string nextString = JackParser.GetTokenTextAtIndex(tokensDoc, 2);
             bool hasOpeningBracket = nextString == "(";
-            return isVarName && hasOpeningBracket;
+            bool isStandAloneCall = isVarName && hasOpeningBracket;
+
+            bool hasDot = nextString == ".";
+            string next2String = JackParser.GetTokenTextAtIndex(tokensDoc, 3);
+            bool isObjectWithSubroutines = JackParser.IsClassName(next2String) || JackParser.IsVariableName(next2String);
+            string next3String = JackParser.GetTokenTextAtIndex(tokensDoc, 4);
+            hasOpeningBracket = next3String == "(";
+            bool isObjectsCall = hasDot && isObjectWithSubroutines && hasOpeningBracket;
+
+            return isStandAloneCall || isObjectsCall;
+
         }
 
         private static bool IsNextNodeTerm_Array(XmlDocument tokensDoc)
         {
-              string text = JackParser.GetFirstTokenText(tokensDoc);
-              bool isVarName = JackParser.IsVariableName(text);
-              string nextString = JackParser.GetTokenTextAtIndex(tokensDoc, 2);
-              bool hasIndexer = nextString == "[";
-              return isVarName && hasIndexer;
+            string text = JackParser.GetFirstTokenText(tokensDoc);
+            bool isVarName = JackParser.IsVariableName(text);
+            string nextString = JackParser.GetTokenTextAtIndex(tokensDoc, 2);
+            bool hasIndexer = nextString == "[";
+            return isVarName && hasIndexer;
         }
 
         private static bool IsNextNodeTerm_varName(XmlDocument tokensDoc)
         {
-              string text = JackParser.GetFirstTokenText(tokensDoc);
-              return JackParser.IsVariableName(text);
+            string text = JackParser.GetFirstTokenText(tokensDoc);
+            return JackParser.IsVariableName(text);
         }
 
         private static bool IsNextNodeTerm_keywoedConstant(XmlDocument tokensDoc)
@@ -1335,22 +1556,22 @@ namespace JackParser
         private static bool IsNextNodeTerm_stringConstant(XmlDocument tokensDoc)
         {
             bool isStringConst = true;
-             bool isQuoteSurronded=false;
+            bool isQuoteSurronded = false;
             bool allValidChars = false;
             string text = JackParser.GetFirstTokenText(tokensDoc);
-            try 
-	        {	        
-		         isQuoteSurronded = text[0] == '\"' && text[text.Length -1] == '\"';
-                char[] disallowdChars = new char[]{'\n','\"'};
-                allValidChars = text.IndexOfAny(disallowdChars,1,text.Length-1) <0 ;
-	        }
-	        catch (Exception)
-	        {
-		
-		        isStringConst = false;
-	        }
-           isStringConst &= isQuoteSurronded &allValidChars;
-           return isStringConst;
+            try
+            {
+                isQuoteSurronded = text[0] == '\"' && text[text.Length - 1] == '\"';
+                char[] disallowdChars = new char[] { '\n', '\"' };
+                allValidChars = text.IndexOfAny(disallowdChars, 1, text.Length - 1) < 0;
+            }
+            catch (Exception)
+            {
+
+                isStringConst = false;
+            }
+            isStringConst &= isQuoteSurronded & allValidChars;
+            return isStringConst;
         }
 
         private static bool IsNextNodeTerm_integerConstant(XmlDocument tokensDoc)
@@ -1402,15 +1623,16 @@ namespace JackParser
             ifStatement,
             [Description("whileStatement")]
             whileStatement,
+            [Description("returnStatement")]
+            returnStatement,
             [Description("subroutineCall")]
             subroutineCall,
-
-
-
-
-
-
-
+            [Description("term")]
+            term,
+            [Description("expression")]
+            expression,
+            [Description("expressionList")]
+            expressionList,
         }
 
         /// <summary>
@@ -1437,7 +1659,7 @@ namespace JackParser
             None,
             integerConstant,
             stringConstant,
-            keywoedConstant,
+            keywordConstant,
             varName,
             Array,
             subRoutineCall,
