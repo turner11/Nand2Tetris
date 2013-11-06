@@ -90,6 +90,25 @@ namespace JackParser
         #endregion
 
         #region Internal Methods
+
+        public static void Start(string folderName)
+        {
+            var jackFiles = Directory.GetFiles(folderName, "*T.xml");
+            foreach (string fileName in jackFiles)
+            {
+                XmlDocument tokens = new XmlDocument();
+                tokens.Load(fileName);
+                string xmlStr = JackParser.GetCleanJackXmlStringFromTokens(tokens);
+                string[] tmp = fileName.Split('.');
+                string fName = tmp[0];
+                if (fName.EndsWith("T"))
+                {
+                    fName = fName.Substring(0,fName.Length-1);
+                }
+                fName = fName + ".xml";
+                System.IO.File.WriteAllText(fName, xmlStr);
+            }
+        }
         /// <summary>
         /// Extension to XmlDocument. returns the document as a string
         /// </summary>
