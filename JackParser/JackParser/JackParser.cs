@@ -16,13 +16,19 @@ namespace JackParser
         #region symbol classifications
         static ReadOnlyCollection<string> _allKeyWords;
         static ReadOnlyCollection<string> _generalKeyWords = new ReadOnlyCollection<string>(
-            new List<String> { "class", "var", "void", "true", "false", "null", "this", "else" });
+            new List<String> { "class", "void",  "else" });
+
+        static ReadOnlyCollection<string> _constantKeyWords = new ReadOnlyCollection<string>(
+            new List<String> { "true", "false", "null", "this"});
 
         static ReadOnlyCollection<string> _statementsHeaders = new ReadOnlyCollection<string>(
            new List<String> { "let", "do", "if", "while", "return" });
 
-        static ReadOnlyCollection<string> _variablesModifiers = new ReadOnlyCollection<string>(
+        static ReadOnlyCollection<string> _classVariablesModifiers = new ReadOnlyCollection<string>(
             new List<String> { "static", "field" });
+
+        static ReadOnlyCollection<string> _variablesModifiers = new ReadOnlyCollection<string>(
+            new List<String> { "var" });
 
         static ReadOnlyCollection<string> _variablesTypes = new ReadOnlyCollection<string>(
             new List<String> { "int", "char", "boolean" });
@@ -67,13 +73,15 @@ namespace JackParser
             /*all keywords*/
             JackParser._subRoutineReturnType = new ReadOnlyCollection<string>(srRetTypes);
             allKeyWords.AddRange(JackParser._generalKeyWords);
-            allKeyWords.AddRange(JackParser._variablesModifiers);
+            allKeyWords.AddRange(JackParser._classVariablesModifiers);
             allKeyWords.AddRange(JackParser._subRoutineReturnType);
             allKeyWords.AddRange(JackParser._statementsHeaders);
             allKeyWords.AddRange(JackParser._oparations);
             allKeyWords.AddRange(JackParser._unariOparations);
             allKeyWords.AddRange(JackParser._symbols);
             allKeyWords.AddRange(JackParser._variablesTypes.Distinct());
+            allKeyWords.AddRange(JackParser._constantKeyWords);
+            allKeyWords.AddRange(JackParser._variablesModifiers);
 
 
             allKeyWords.AddRange(JackParser._subRoutineModifiers);
@@ -99,7 +107,7 @@ namespace JackParser
                 settings.NewLineHandling = NewLineHandling.Replace;
                 settings.Indent = true;
                 settings.IndentChars = "\t";
-                settings.NamespaceHandling = NamespaceHandling.OmitDuplicates;
+                settings.NamespaceHandling = NamespaceHandling.Default;
                 settings.OutputMethod.ToString();// = XmlOutputMethod.Xml;
                 xmlDoc.WriteTo(xmlTextWriter);
                 xmlTextWriter.Flush();
@@ -147,6 +155,20 @@ namespace JackParser
             XmlDocument xmlOutput = JackParser.GetJackXmlFromTokens(tokens);
             return (xmlOutput ?? new XmlDocument()).ToXmlString();
         }
+        internal static string GetCleanJackXmlStringFromTokens(XmlDocument tokens)
+        {
+            string str = GetJackXmlStringFromTokens(tokens);
+            string cleanStr = str.Replace("<expressionList/>", "<expressionList />").Replace("<parameterList/>", "<parameterList />");
+            cleanStr = cleanStr.Replace("<parameterList />", String.Format("<parameterList>" + Environment.NewLine + "</parameterList>"))
+                .Replace("<expressionList />", String.Format("<expressionList>" + Environment.NewLine + "</expressionList>"));
+            int firstRowEnd = cleanStr.IndexOf(">", 1);
+            if (firstRowEnd>0)
+            {
+                cleanStr = cleanStr.Substring(firstRowEnd + 1, cleanStr.Length - firstRowEnd-1);
+            }
+            cleanStr = cleanStr.Trim() ;
+            return cleanStr;
+        }
         #endregion
 
         /// <summary>
@@ -184,7 +206,7 @@ namespace JackParser
             JackParser.RemoveFirstToken(tokensDoc);
 
             /*Variable declarations*/
-            JackParser.AppendVariableDeclarations(classRoot, tokensDoc);
+            JackParser.AppendVariableDeclarations(classRoot, tokensDoc,true);
 
             /*Sub routine declarations*/
             JackParser.AppendSubRoutinesDeclarations(classRoot, tokensDoc);
@@ -203,9 +225,9 @@ namespace JackParser
         {
             if (e.Node != null)
             {
-
+                UpdateString(e.Node.OwnerDocument);
             }
-            UpdateString(e.Node.OwnerDocument);
+            
         }
 
         [Conditional("DEBUG")]
@@ -223,12 +245,13 @@ namespace JackParser
         /// </summary>
         /// <param name="classRoot">The class root node.</param>
         /// <param name="tokensDoc">The tokens doc to take nodes from.</param>
-        private static void AppendVariableDeclarations(XmlNode classRoot, XmlDocument tokensDoc)
+        /// <param name="classVariable">if set to <c>true</c> will expect variables for class template, otherwise local variables for subroutine.</param>
+        private static void AppendVariableDeclarations(XmlNode classRoot, XmlDocument tokensDoc, bool classVariable)
         {
 
             while (JackParser.IsVarDecBegining(tokensDoc))
             {
-                JackParser.AppendVariableDeclaration(classRoot, tokensDoc);
+                JackParser.AppendVariableDeclaration(classRoot, tokensDoc, classVariable);
             }
         }
 
@@ -240,17 +263,20 @@ namespace JackParser
         /// </summary>
         /// <param name="classRoot">The class root node.</param>
         /// <param name="tokensDoc">The tokens doc to take nodes from.</param>
-        private static void AppendVariableDeclaration(XmlNode classRoot, XmlDocument tokensDoc)
+        /// <param name="isClassVariable">if set to <c>true</c> will expect variables for class template, otherwise local variables for subroutine.</param>
+        private static void AppendVariableDeclaration(XmlNode classRoot, XmlDocument tokensDoc, bool isClassVariable)
         {
             XmlDocument xml = classRoot.OwnerDocument;
             //create classVarDec root element
-            XmlNode rootVarDec = xml.CreateNode(XmlNodeType.Element, OutputStructureNodes.classVarDec.ToStringByDescription(), String.Empty);
+            OutputStructureNodes nodeType = isClassVariable ? OutputStructureNodes.classVarDec : OutputStructureNodes.varDec;
+            XmlNode rootVarDec = xml.CreateNode(XmlNodeType.Element, nodeType.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
             classRoot.AppendChild(rootVarDec);
 
-            /*field | static------------------------------------------------------------------------*/
+            /*field | static | var------------------------------------------------------------------------*/
             XmlNode tKeyWordModifier = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootVarDec, tKeyWordModifier, JackParser._variablesModifiers, TokenTypes.keyword, null);
+            IEnumerable<string> validModifiers = isClassVariable ? (IEnumerable<string>)JackParser._classVariablesModifiers : new List<string> { "var" };
+            JackParser.AddToken(rootVarDec, tKeyWordModifier, validModifiers, TokenTypes.keyword, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
@@ -334,6 +360,8 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
+            JackParser.AppendVariableDeclarations(rootSubroutineBodyNode, tokensDoc, false);
+
             JackParser.AppendStatements(rootSubroutineBodyNode, tokensDoc);
 
             /*}------------------------------------------------------------------------*/
@@ -360,9 +388,18 @@ namespace JackParser
             /*function return type------------------------------------------------------------------------*/
             XmlNode retTypeToken = JackParser.GetNextToken(tokensDoc);
 
-            List<string> possibleTexts = JackParser.GetValidTypeName(retTypeToken.InnerText);
 
-            JackParser.AddToken(rootSubDec, retTypeToken, possibleTexts, TokenTypes.identifier, OutputStructureNodes.type.ToStringByDescription());
+            List<string> possibleTexts = JackParser.GetValidTypeName(retTypeToken.InnerText);
+            bool returnsType = JackParser.ValidateToken(retTypeToken, possibleTexts, TokenTypes.identifier, false);
+            if (returnsType)
+            {
+                JackParser.AddToken(rootSubDec, retTypeToken, possibleTexts, TokenTypes.identifier, OutputStructureNodes.type.ToStringByDescription());
+
+            }
+            else //must return void...
+            {
+                JackParser.AddToken(rootSubDec, retTypeToken, "void", TokenTypes.keyword, null);
+            }            
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
             /*function name------------------------------------------------------------------------*/
@@ -431,7 +468,8 @@ namespace JackParser
         {
             /*UnaryOp*/
             XmlNode unaryOpSymbol = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootTermToken, unaryOpSymbol, JackParser._unariOparations, TokenTypes.symbol, OutputStructureNodes.term.ToStringByDescription());
+            JackParser.AddToken(rootTermToken, unaryOpSymbol, JackParser._unariOparations,TokenTypes.symbol,TokenTypes.unaricOperation.ToStringByDescription());
+            JackParser.RemoveFirstToken(tokensDoc);
             /*Term*/
             JackParser.AppendTerm(rootTermToken, tokensDoc);
 
@@ -490,20 +528,18 @@ namespace JackParser
             XmlNode rootParamList = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.expressionList.ToStringByDescription(), String.Empty);
             //adding the class root node
             parentNode.AppendChild(rootParamList);
-            bool isFirst = true;
             while (JackParser.IsNextTokenTerm(tokensDoc))
             {
-                if (!isFirst)
+                JackParser.AppendExpression(rootParamList, tokensDoc);
+
+                string nextNodeText = JackParser.GetFirstTokenText(tokensDoc);
+                if (nextNodeText == ",")
                 {
                     XmlNode commaToken = JackParser.GetNextToken(tokensDoc);
                     JackParser.AddToken(rootParamList, commaToken, ",", TokenTypes.symbol, null);
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
                 }
-                JackParser.AppendExpression(rootParamList, tokensDoc);
-
-
-                isFirst = false;
             }
         }
 
@@ -520,7 +556,7 @@ namespace JackParser
             {
                 /*OP*/
                 XmlNode opToken = JackParser.GetNextToken(tokensDoc);
-                JackParser.AddToken(parentNode, opToken, JackParser._oparations, TokenTypes.operation, null);
+                JackParser.AddToken(parentNode, opToken, JackParser._oparations, TokenTypes.symbol, TokenTypes.operation.ToStringByDescription());
                 //token was handled, remove it
                 JackParser.RemoveFirstToken(tokensDoc);
                 /*term*/
@@ -567,11 +603,13 @@ namespace JackParser
                     break;
                 case TermTypes.keywordConstant:
                     /*term root*/
-                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty);
-                    //adding the variable declaration node
+                    rootTermToken = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.term.ToStringByDescription(), String.Empty); 
+                    //adding the term to the expresssion
                     parentNode.AppendChild(rootTermToken);
 
-                    JackParser.AddToken(rootTermToken, rootTermToken, TokenTypes.keyword, TermTypes.keywordConstant.ToStringByDescription());
+                    XmlNode constNode = JackParser.GetNextToken(tokensDoc);
+
+                    JackParser.AddToken(rootTermToken, constNode, JackParser._constantKeyWords,TokenTypes.keyword, TermTypes.keywordConstant.ToStringByDescription());
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
                     break;
@@ -764,6 +802,12 @@ namespace JackParser
                     JackParser.AddToken(subRoutineNode, classOrVarNameNode, TokenTypes.identifier, null);
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
+
+                    XmlNode dotToken = JackParser.GetNextToken(tokensDoc);
+                    JackParser.AddToken(subRoutineNode, dotToken, ".", TokenTypes.symbol, null);
+                    //token was handled, remove it
+                    JackParser.RemoveFirstToken(tokensDoc);
+
                     JackParser.AppendSubroutineAndExpressions(subRoutineNode, tokensDoc);
                 }
                 else if (sRoutineOwner == OutputStructureNodes.subroutineName)
@@ -783,13 +827,9 @@ namespace JackParser
         /// </summary>
         /// <param name="subroutineCallRootNode">The rootdo node.</param>
         /// <param name="tokensDoc">The tokens doc.</param>
-        /// <exception cref="System.NotImplementedException"></exception>
         private static void AppendSubroutineAndExpressions(XmlNode subroutineCallRootNode, XmlDocument tokensDoc)
         {
-            XmlNode dotToken = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(subroutineCallRootNode, dotToken, ".", TokenTypes.symbol, null);
-            //token was handled, remove it
-            JackParser.RemoveFirstToken(tokensDoc);
+            
 
 
             /*Validating subroutine name*/
@@ -850,16 +890,16 @@ namespace JackParser
                     JackParser.AppendLetStatement(rootStatement, tokensDoc);
                     break;
                 case "if":
-                    JackParser.AppendIfStatement(parentNode, tokensDoc);
+                    JackParser.AppendIfStatement(rootStatement, tokensDoc);
                     break;
                 case "while":
-                    JackParser.AppendWhileStatement(parentNode, tokensDoc);
+                    JackParser.AppendWhileStatement(rootStatement, tokensDoc);
                     break;
                 case "do":
-                    JackParser.AppendDoStatement(parentNode, tokensDoc);
+                    JackParser.AppendDoStatement(rootStatement, tokensDoc);
                     break;
                 case "return":
-                    JackParser.AppendReturnStatement(parentNode, tokensDoc);
+                    JackParser.AppendReturnStatement(rootStatement, tokensDoc);
                     break;
                 default:
                     throw new Exception(String.Format("Unknown statement type ({0})", firstStatementNodeString));
@@ -878,6 +918,13 @@ namespace JackParser
             XmlNode rootReturnNode = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.returnStatement.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
             parentNode.AppendChild(rootReturnNode);
+
+            /*return value*/
+            XmlNode retNode = JackParser.GetNextToken(tokensDoc);
+            JackParser.AddToken(rootReturnNode, retNode, "return", TokenTypes.keyword, null);
+            JackParser.RemoveFirstToken(tokensDoc);
+
+
 
             /*return value*/
             XmlNode retValToken = JackParser.GetNextToken(tokensDoc);
@@ -903,7 +950,18 @@ namespace JackParser
             //adding the variable declaration node
             parentNode.AppendChild(rootdoNode);
 
+            XmlNode doToken = JackParser.GetNextToken(tokensDoc);
+            JackParser.AddToken(rootdoNode, doToken, "do", TokenTypes.keyword, null);
+            JackParser.RemoveFirstToken(tokensDoc);
+
             JackParser.AppendSubroutineCall(rootdoNode, tokensDoc);
+
+
+            /*;*/
+            XmlNode semiCommaToken = JackParser.GetNextToken(tokensDoc);
+            JackParser.AddToken(rootdoNode, semiCommaToken, ";", TokenTypes.symbol, null);
+            //token was handled, remove it
+            JackParser.RemoveFirstToken(tokensDoc);
         }
 
 
@@ -1043,12 +1101,12 @@ namespace JackParser
         private static TermTypes GetNextTokenTermType(XmlDocument tokensDoc)
         {
 
+            if (JackParser.IsNextNodeTerm_Array(tokensDoc)) { return TermTypes.Array; }//should be before var name
             if (JackParser.IsNextNodeTerm_integerConstant(tokensDoc)) { return TermTypes.integerConstant; }
             if (JackParser.IsNextNodeTerm_stringConstant(tokensDoc)) { return TermTypes.stringConstant; }
-            if (JackParser.IsNextNodeTerm_keywoedConstant(tokensDoc)) { return TermTypes.keywordConstant; }
+            if (JackParser.IsNextNodeTerm_keywordConstant(tokensDoc)) { return TermTypes.keywordConstant; }
             if (JackParser.IsNextNodeTerm_subRoutineCall(tokensDoc)) { return TermTypes.subRoutineCall; }//should be before var name
-            if (JackParser.IsNextNodeTerm_varName(tokensDoc)) { return TermTypes.varName; }
-            if (JackParser.IsNextNodeTerm_Array(tokensDoc)) { return TermTypes.Array; }
+            if (JackParser.IsNextNodeTerm_varName(tokensDoc)) { return TermTypes.varName; }            
             if (JackParser.IsNextNodeTerm_ExpressionInBrackets(tokensDoc)) { return TermTypes.ExpressionInBrackets; }
             if (JackParser.IsNextNodeTerm_UnaryOpAndTerm(tokensDoc)) { return TermTypes.UnaryOpAndTerm; }
 
@@ -1361,11 +1419,6 @@ namespace JackParser
             TokenTypes tType = JackParser.GetNextTokenType(tokensDoc);
             string nodeText = JackParser.GetFirstTokenText(tokensDoc);
 
-
-            //className,
-            //subroutineName,
-            //varName,
-
             switch (tType)
             {
                 case TokenTypes.identifier:
@@ -1459,7 +1512,8 @@ namespace JackParser
                 TokenTypes tType = GetNextTokenType(tokensDoc);
                 string text = JackParser.GetFirstTokenText(tokensDoc);
 
-                isVarDecBegining = tType == TokenTypes.keyword && JackParser._variablesModifiers.Contains(text);
+                isVarDecBegining = tType == TokenTypes.keyword 
+                    && (JackParser._classVariablesModifiers.Contains(text) || JackParser._variablesModifiers.Contains(text));
             }
             catch (Exception)
             {
@@ -1547,21 +1601,25 @@ namespace JackParser
             return JackParser.IsVariableName(text);
         }
 
-        private static bool IsNextNodeTerm_keywoedConstant(XmlDocument tokensDoc)
+        private static bool IsNextNodeTerm_keywordConstant(XmlDocument tokensDoc)
         {
             string text = JackParser.GetFirstTokenText(tokensDoc);
-            return JackParser._allKeyWords.Contains(text);
+            return JackParser._constantKeyWords.Contains(text);
         }
 
         private static bool IsNextNodeTerm_stringConstant(XmlDocument tokensDoc)
         {
+            XmlNode node = JackParser.GetNextToken(tokensDoc);
+            if (node == null)
+            {
+                return false;
+            }
             bool isStringConst = true;
-            bool isQuoteSurronded = false;
             bool allValidChars = false;
+            bool isMarkedStrConstant = node.Name == "stringConstant";
             string text = JackParser.GetFirstTokenText(tokensDoc);
             try
-            {
-                isQuoteSurronded = text[0] == '\"' && text[text.Length - 1] == '\"';
+            {                
                 char[] disallowdChars = new char[] { '\n', '\"' };
                 allValidChars = text.IndexOfAny(disallowdChars, 1, text.Length - 1) < 0;
             }
@@ -1570,7 +1628,7 @@ namespace JackParser
 
                 isStringConst = false;
             }
-            isStringConst &= isQuoteSurronded & allValidChars;
+            isStringConst &= allValidChars && isMarkedStrConstant;
             return isStringConst;
         }
 
@@ -1649,7 +1707,7 @@ namespace JackParser
             [Description("op")]
             operation,
             [Description("unaryOp")]
-            unaricOperation,
+            unaricOperation,            
             other,
 
         }

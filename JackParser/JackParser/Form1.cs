@@ -29,7 +29,7 @@ namespace JackParser
 
             XmlDocument tokens = new XmlDocument();
             tokens.Load(this.textBox1.Text);
-            string strXmlDoc = JackParser.GetJackXmlStringFromTokens(tokens);
+            string strXmlDoc = JackParser.GetCleanJackXmlStringFromTokens(tokens);
         }
     }
 }
