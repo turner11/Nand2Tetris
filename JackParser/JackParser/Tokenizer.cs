@@ -17,29 +17,47 @@ namespace Ex2
             this.workingDir = workingDir;
         }
 
-        public void start()
+        public List<Exception> start()
         {
             var jackFiles = Directory.GetFiles(workingDir, "*.jack");
+
+            List<Exception> exList = new List<Exception>();
             foreach (string fileName in jackFiles)
             {
-                string str = File.ReadAllText(fileName);
-                str = removeComments(str);
-                str = recursiveTokenize(str);
-                string[] tmp = fileName.Split('.');
-                string newFileName = tmp[0] + "T.xml";
-                System.IO.File.WriteAllText(newFileName, str);
+                try
+                {
+                    string str = File.ReadAllText(fileName);
+                    str = removeComments(str);
+                    str = recursiveTokenize(str);
+                    str = "<tokens>" + Environment.NewLine + str + Environment.NewLine + "</tokens>";
+                    string[] tmp = fileName.Split('.');
+                    string newFileName = tmp[0] + "T.xml";
+                    System.IO.File.WriteAllText(newFileName, str);
+                }
+                catch (Exception ex)
+                {
+
+                    Exception e = new Exception("Failed to create tokens file: " + fileName, ex);
+                    exList.Add(e);
+                    continue;
+                }
+                
             }
+            return exList;
         }
 
         public string singleTokenize(string source)
         {
             string output = symbolTokenize(source);
+            //Console.WriteLine(output);
+            //Console.ReadLine();
             output = keywordTokenize(output);
             output = integerTokenize(output);
             output = trimString(output);
+  
             output = identifierTokenize(output);
             output = niceString(output);
-            output = "<tokens>" + Environment.NewLine + output + Environment.NewLine + "</tokens>";
+            
             return (output);
         }
 
@@ -94,7 +112,7 @@ namespace Ex2
                     if (output[i] != '<')
                     {
                         int j = i + 1;
-                        while (output[j] != '<' && j < output.Length)
+                        while (j < output.Length && output[j] != '<')
                         {
                             j++;
                         }
@@ -179,7 +197,22 @@ namespace Ex2
             string output = Regex.Replace(source, symbolsRegex, delegate(Match match)
             {
                 string result = "<symbol>";
-                result += match.ToString();
+                if (match.ToString() == "<")
+                {
+                    result += "&lt;";
+                }
+                else if (match.ToString() == ">")
+                {
+                    result += "&gt;";
+                }
+                else if (match.ToString() == "&")
+                {
+                    result += "&amp;";
+                }
+                else
+                {
+                    result += match.ToString();
+                }
                 result += "</symbol>" + Environment.NewLine;
                 return result;
             });
@@ -206,10 +239,10 @@ namespace Ex2
                     return ("");
                 }
 
-                string strContent = "<stringConstant>";
+                string strContent = Environment.NewLine + "<stringConstant>";
                 strContent += source.Substring(firstQuotePos + 1, nextQuotePos - firstQuotePos - 1);
                 strContent += "</stringConstant>" + Environment.NewLine;
-                string pre = source.Substring(0, firstQuotePos - 1);
+                string pre = source.Substring(0, firstQuotePos);
                 string post = source.Substring(nextQuotePos + 1);
                 return recursiveTokenize(pre) + strContent + recursiveTokenize(post);
             } 

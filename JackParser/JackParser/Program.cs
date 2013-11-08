@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 
 
@@ -34,10 +35,13 @@ namespace Ex2
             }
             
             Tokenizer tokenizer = new Tokenizer(folder);
+
+            List<Exception> tokensError = new List<Exception>();
+            List<Exception> parserError = new List<Exception>(); 
             try
             {
-                tokenizer.start();
-                JackParser.JackParser.Start(folder);
+                tokensError = tokenizer.start();
+                parserError = JackParser.JackParser.Start(folder);
                 
             }
             catch (Exception ex)
@@ -46,8 +50,31 @@ namespace Ex2
                 Console.WriteLine("Failed to compile: "+ex.Message);
                 Console.WriteLine(ex.ToString());
             }
+
+            PrintErrors(tokensError, "Had errors while creating tokens");
+            PrintErrors(parserError, "Had errors while parsing:");
             
 
+        }
+
+        private static void PrintErrors(List<Exception> errorList, string msg)
+        {
+            if (errorList.Count > 0)
+            {
+                Console.WriteLine(msg);
+                Console.WriteLine(Environment.NewLine);
+                foreach (Exception ex in errorList)
+                {
+                    Console.WriteLine(Environment.NewLine);
+                    Console.WriteLine(ex.Message);
+                    Console.WriteLine(Environment.NewLine);
+                    Console.WriteLine(ex.ToString());
+                    Console.WriteLine(Environment.NewLine);
+
+                }
+            }
+            
+            
         }
     }
 }

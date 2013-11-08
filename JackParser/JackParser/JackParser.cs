@@ -91,23 +91,50 @@ namespace JackParser
 
         #region Internal Methods
 
-        public static void Start(string folderName)
+        public static List<Exception> Start(string folderName)
         {
+            List<Exception> exList = new List<Exception>();
             var jackFiles = Directory.GetFiles(folderName, "*T.xml");
             foreach (string fileName in jackFiles)
             {
                 XmlDocument tokens = new XmlDocument();
-                tokens.Load(fileName);
-                string xmlStr = JackParser.GetCleanJackXmlStringFromTokens(tokens);
-                string[] tmp = fileName.Split('.');
-                string fName = tmp[0];
-                if (fName.EndsWith("T"))
+                try
                 {
-                    fName = fName.Substring(0,fName.Length-1);
+                    tokens.Load(fileName);
                 }
-                fName = fName + ".xml";
-                System.IO.File.WriteAllText(fName, xmlStr);
+                catch (Exception ex)
+                {
+
+                    Exception e = new Exception("Got bad tokens document: "+ fileName,ex);
+                    exList.Add(e);
+                    continue;
+                }
+
+                try
+                {
+                    string xmlStr = JackParser.GetCleanJackXmlStringFromTokens(tokens);
+                    
+                    string[] tmp = fileName.Split('.');
+                    string fName = tmp[0];
+                    if (fName.EndsWith("T"))
+                    {
+                        fName = fName.Substring(0, fName.Length - 1);
+                    }
+                    fName = fName + ".xml";
+                    System.IO.File.WriteAllText(fName, xmlStr);
+                }
+                catch (Exception ex)
+                {
+
+                    Exception e = new Exception("Failed to parse tokens file: " + fileName, ex);
+                    exList.Add(e);
+                    continue;
+                }
+                
+                
             }
+            return exList;
+
         }
         /// <summary>
         /// Extension to XmlDocument. returns the document as a string
