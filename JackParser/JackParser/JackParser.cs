@@ -204,15 +204,57 @@ namespace JackParser
         internal static string GetCleanJackXmlStringFromTokens(XmlDocument tokens)
         {
             string str = GetJackXmlStringFromTokens(tokens);
+             /*Removing first row of XML declaration*/
+            int firstRowEnd = str.IndexOf(">", 1);
+            if (firstRowEnd>0)
+            {
+                str = str.Substring(firstRowEnd + 1, str.Length - firstRowEnd-1);
+            }
+
+            /*replacing empty single elements with open / close tags*/
             string cleanStr = str.Replace("<expressionList/>", "<expressionList />").Replace("<parameterList/>", "<parameterList />");
             cleanStr = cleanStr.Replace("<parameterList />", String.Format("<parameterList>" + Environment.NewLine + "</parameterList>"))
                 .Replace("<expressionList />", String.Format("<expressionList>" + Environment.NewLine + "</expressionList>"));
-            int firstRowEnd = cleanStr.IndexOf(">", 1);
-            if (firstRowEnd>0)
+
+
+            /*Reformatting as per late instructor request*/
+            /*newline after closing tag of: identifier, stringConstant, integerConstant, symbol, keyword 
+             *all other tags - newline after opening\closing tags
+             */
+            cleanStr = Regex.Replace(cleanStr, @"</*[a-z]*[A-Z]*>", delegate(Match match)
+	        {
+	            string endTag = match.ToString();
+                string retTag = endTag+Environment.NewLine;
+                return retTag;
+	        },RegexOptions.IgnoreCase);
+
+
+            string[] oneLineTags = 
             {
-                cleanStr = cleanStr.Substring(firstRowEnd + 1, cleanStr.Length - firstRowEnd-1);
+               "identifier",
+               "stringConstant",
+               "integerConstant",
+                "symbol",
+                "keyword"
+            };
+
+            foreach (string currTag in oneLineTags)
+            {
+                /*remove new line after opening tag*/
+                string regexPattern = @"<" + currTag + ">" + Environment.NewLine;
+                cleanStr = Regex.Replace(cleanStr, regexPattern, delegate(Match match)
+                {
+                    string openingTag = match.ToString();
+                    string retTag = openingTag.Replace(Environment.NewLine,String.Empty).Trim();
+                    return retTag;
+                }, RegexOptions.IgnoreCase);
+                
             }
-            cleanStr = cleanStr.Trim() ;
+
+
+
+
+            cleanStr = cleanStr.Replace(Environment.NewLine + Environment.NewLine, Environment.NewLine).Trim();
             return cleanStr;
         }
         #endregion
