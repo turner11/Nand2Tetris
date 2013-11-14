@@ -13,40 +13,7 @@ namespace JackParser
 {
     public static class JackParser
     {
-        #region symbol classifications
-        static ReadOnlyCollection<string> _allKeyWords;
-        static ReadOnlyCollection<string> _generalKeyWords = new ReadOnlyCollection<string>(
-            new List<String> { "class", "void",  "else" });
-
-        static ReadOnlyCollection<string> _constantKeyWords = new ReadOnlyCollection<string>(
-            new List<String> { "true", "false", "null", "this"});
-
-        static ReadOnlyCollection<string> _statementsHeaders = new ReadOnlyCollection<string>(
-           new List<String> { "let", "do", "if", "while", "return" });
-
-        static ReadOnlyCollection<string> _classVariablesModifiers = new ReadOnlyCollection<string>(
-            new List<String> { "static", "field" });
-
-        static ReadOnlyCollection<string> _variablesModifiers = new ReadOnlyCollection<string>(
-            new List<String> { "var" });
-
-        static ReadOnlyCollection<string> _variablesTypes = new ReadOnlyCollection<string>(
-            new List<String> { "int", "char", "boolean" });
-
-        static ReadOnlyCollection<string> _subRoutineReturnType;
-
-        static ReadOnlyCollection<string> _subRoutineModifiers = new ReadOnlyCollection<string>(
-            new List<String> { "constructor", "function", "method" });
-
-        static ReadOnlyCollection<string> _symbols;
-
-
-        static ReadOnlyCollection<string> _oparations =
-            new ReadOnlyCollection<string>(new List<String> { "+", "-", "*", "/", "&", "|", "<", ">", "=" });
-
-        static ReadOnlyCollection<string> _unariOparations =
-            new ReadOnlyCollection<string>(new List<String> { "~", "-", "#" });
-        #endregion
+        
 
         /// <summary>
         /// for debugging, helps to keep track
@@ -59,33 +26,33 @@ namespace JackParser
         #region C'tor
         static JackParser()
         {
-            var srRetTypes = new List<string>(JackParser._variablesTypes);
+            var srRetTypes = new List<string>(SymbolClassifications._variablesTypes);
             srRetTypes.Add("void");
 
             List<string> allKeyWords = new List<string>();
 
             /*symbols*/
             List<string> allSymbols = new List<string>() { "[", "]", "{", "}", "(", ")", ".", ",", ";" };
-            allSymbols.AddRange(JackParser._oparations);
-            allSymbols.AddRange(JackParser._unariOparations);
-            JackParser._symbols = new ReadOnlyCollection<string>(allSymbols);
+            allSymbols.AddRange(SymbolClassifications._oparations);
+            allSymbols.AddRange(SymbolClassifications._unariOparations);
+            SymbolClassifications._symbols = new ReadOnlyCollection<string>(allSymbols);
 
             /*all keywords*/
-            JackParser._subRoutineReturnType = new ReadOnlyCollection<string>(srRetTypes);
-            allKeyWords.AddRange(JackParser._generalKeyWords);
-            allKeyWords.AddRange(JackParser._classVariablesModifiers);
-            allKeyWords.AddRange(JackParser._subRoutineReturnType);
-            allKeyWords.AddRange(JackParser._statementsHeaders);
-            allKeyWords.AddRange(JackParser._oparations);
-            allKeyWords.AddRange(JackParser._unariOparations);
-            allKeyWords.AddRange(JackParser._symbols);
-            allKeyWords.AddRange(JackParser._variablesTypes.Distinct());
-            allKeyWords.AddRange(JackParser._constantKeyWords);
-            allKeyWords.AddRange(JackParser._variablesModifiers);
+            SymbolClassifications._subRoutineReturnType = new ReadOnlyCollection<string>(srRetTypes);
+            allKeyWords.AddRange(SymbolClassifications._generalKeyWords);
+            allKeyWords.AddRange(SymbolClassifications._classVariablesModifiers);
+            allKeyWords.AddRange(SymbolClassifications._subRoutineReturnType);
+            allKeyWords.AddRange(SymbolClassifications._statementsHeaders);
+            allKeyWords.AddRange(SymbolClassifications._oparations);
+            allKeyWords.AddRange(SymbolClassifications._unariOparations);
+            allKeyWords.AddRange(SymbolClassifications._symbols);
+            allKeyWords.AddRange(SymbolClassifications._variablesTypes.Distinct());
+            allKeyWords.AddRange(SymbolClassifications._constantKeyWords);
+            allKeyWords.AddRange(SymbolClassifications._variablesModifiers);
 
 
-            allKeyWords.AddRange(JackParser._subRoutineModifiers);
-            JackParser._allKeyWords = new ReadOnlyCollection<string>(allKeyWords.Distinct().ToList());
+            allKeyWords.AddRange(SymbolClassifications._subRoutineModifiers);
+            SymbolClassifications._allKeyWords = new ReadOnlyCollection<string>(allKeyWords.Distinct().ToList());
         }
         #endregion
 
@@ -284,6 +251,7 @@ namespace JackParser
             /*Class Name*/
             XmlNode tClassName = JackParser.GetNextToken(tokensDoc);
             JackParser.AddToken(classRoot, tClassName, TokenTypes.identifier, null);
+            VMCodeWriter.ClassName = JackParser.GetFirstTokenText(tokensDoc);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
@@ -292,7 +260,7 @@ namespace JackParser
             JackParser.AddToken(classRoot, tOpenBracket, "{", TokenTypes.symbol, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
-
+            
             /*Variable declarations*/
             JackParser.AppendVariableDeclarations(classRoot, tokensDoc,true);
 
@@ -363,8 +331,9 @@ namespace JackParser
 
             /*field | static | var------------------------------------------------------------------------*/
             XmlNode tKeyWordModifier = JackParser.GetNextToken(tokensDoc);
-            IEnumerable<string> validModifiers = isClassVariable ? (IEnumerable<string>)JackParser._classVariablesModifiers : new List<string> { "var" };
+            IEnumerable<string> validModifiers = isClassVariable ? (IEnumerable<string>)SymbolClassifications._classVariablesModifiers : new List<string> { "var" };
             JackParser.AddToken(rootVarDec, tKeyWordModifier, validModifiers, TokenTypes.keyword, null);
+            
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
@@ -379,15 +348,16 @@ namespace JackParser
 
             /*var name------------------------------------------------------------------------*/
             bool hasAnotherVar = false; // until proven otherwise, we assume we are nor facing "field int x, y;"
+            
             do
             {
                 hasAnotherVar = false;
                 XmlNode varNameToken = JackParser.GetNextToken(tokensDoc);
                 bool isvalidName = JackParser.IsVariableName(varNameToken.InnerText);
                 /*Not valid name; quit*/
-                if (!isvalidName) { throw new Exception(String.Format("variable name {0} is not valid", varNameToken.InnerText)); }
-
+                if (!isvalidName) { throw new Exception(String.Format("variable name {0} is not valid", varNameToken.InnerText)); }                
                 JackParser.AddToken(rootVarDec, varNameToken, String.Empty, TokenTypes.identifier, null);
+                VMCodeWriter.AddVariablbe(tKeyWordModifier.InnerText, varNameToken.InnerText);
                 //token was handled, remove it
                 JackParser.RemoveFirstToken(tokensDoc);
                 if (JackParser.GetFirstTokenText(tokensDoc) == ",")
@@ -469,7 +439,7 @@ namespace JackParser
         {
             /*constructor | function | method------------------------------------------------------------------------*/
             XmlNode tFuncType = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootSubDec, tFuncType, JackParser._subRoutineModifiers, TokenTypes.keyword, null);
+            JackParser.AddToken(rootSubDec, tFuncType, SymbolClassifications._subRoutineModifiers, TokenTypes.keyword, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
@@ -478,10 +448,13 @@ namespace JackParser
 
 
             List<string> possibleTexts = JackParser.GetValidTypeName(retTypeToken.InnerText);
-            bool returnsType = JackParser.ValidateToken(retTypeToken, possibleTexts, TokenTypes.identifier, false);
+            List<Enum> possibleTpyes = new List<Enum> {TokenTypes.identifier /*for int, bool...*/, TokenTypes.keyword /*for return type of class...*/};
+            bool returnsType = JackParser.ValidateToken(retTypeToken, possibleTexts, possibleTpyes, false);
+
+            
             if (returnsType)
             {
-                JackParser.AddToken(rootSubDec, retTypeToken, possibleTexts, TokenTypes.identifier, OutputStructureNodes.type.ToStringByDescription());
+                JackParser.AddToken(rootSubDec, retTypeToken, possibleTexts, possibleTpyes, OutputStructureNodes.type.ToStringByDescription());
 
             }
             else //must return void...
@@ -498,6 +471,7 @@ namespace JackParser
             if (!isvalidName) { throw new Exception(String.Format("sub-routine name {0} is not valid", varfuncNameToken.InnerText)); }
 
             JackParser.AddToken(rootSubDec, varfuncNameToken, String.Empty, TokenTypes.identifier, OutputStructureNodes.subroutineName.ToStringByDescription());
+           
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
             /*(------------------------------------------------------------------------*/
@@ -507,7 +481,8 @@ namespace JackParser
             JackParser.RemoveFirstToken(tokensDoc);
 
             /*Parameter List------------------------------------------------------------------------*/
-            JackParser.GetParameterList(rootSubDec, tokensDoc);
+            int paramCount = JackParser.GetParameterList(rootSubDec, tokensDoc);
+            VMCodeWriter.AddFunction(tFuncType.InnerText, varfuncNameToken.InnerText, paramCount);
 
             /*)------------------------------------------------------------------------*/
             XmlNode closeBracket = JackParser.GetNextToken(tokensDoc);
@@ -556,7 +531,7 @@ namespace JackParser
         {
             /*UnaryOp*/
             XmlNode unaryOpSymbol = JackParser.GetNextToken(tokensDoc);
-            JackParser.AddToken(rootTermToken, unaryOpSymbol, JackParser._unariOparations,TokenTypes.symbol,TokenTypes.unaricOperation.ToStringByDescription());
+            JackParser.AddToken(rootTermToken, unaryOpSymbol, SymbolClassifications._unariOparations,TokenTypes.symbol,TokenTypes.unaricOperation.ToStringByDescription());
             JackParser.RemoveFirstToken(tokensDoc);
             /*Term*/
             JackParser.AppendTerm(rootTermToken, tokensDoc);
@@ -644,7 +619,7 @@ namespace JackParser
             {
                 /*OP*/
                 XmlNode opToken = JackParser.GetNextToken(tokensDoc);
-                JackParser.AddToken(parentNode, opToken, JackParser._oparations, TokenTypes.symbol, TokenTypes.operation.ToStringByDescription());
+                JackParser.AddToken(parentNode, opToken, SymbolClassifications._oparations, TokenTypes.symbol, TokenTypes.operation.ToStringByDescription());
                 //token was handled, remove it
                 JackParser.RemoveFirstToken(tokensDoc);
                 /*term*/
@@ -697,7 +672,7 @@ namespace JackParser
 
                     XmlNode constNode = JackParser.GetNextToken(tokensDoc);
 
-                    JackParser.AddToken(rootTermToken, constNode, JackParser._constantKeyWords,TokenTypes.keyword, TermTypes.keywordConstant.ToStringByDescription());
+                    JackParser.AddToken(rootTermToken, constNode, SymbolClassifications._constantKeyWords,TokenTypes.keyword, TermTypes.keywordConstant.ToStringByDescription());
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
                     break;
@@ -767,8 +742,9 @@ namespace JackParser
         /// </summary>
         /// <param name="rootSubDec">The root sub dec.</param>
         /// <param name="tokensDoc">The tokens doc.</param>
-        private static void GetParameterList(XmlNode parentNode, XmlDocument tokensDoc)
+        private static int GetParameterList(XmlNode parentNode, XmlDocument tokensDoc)
         {
+            int paramCount = 0;
             //create classVarDec root element
             XmlNode rootPramList = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.parameterList.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
@@ -786,7 +762,7 @@ namespace JackParser
             hasParams &= nSecond != null && JackParser.IsVariableName(nSecond.InnerText);
             if (!hasParams)
             {
-                return;
+                return 0 ;
             }
 
 
@@ -797,6 +773,7 @@ namespace JackParser
                 bool isMiltipleVars = false; // until proven otherwise, we assume we are nor facing "field int x, y;"
                 do
                 {
+                    
                     isMiltipleVars = false;  //resetting
                     /*var type*/
                     XmlNode varTypeToken = JackParser.GetNextToken(tokensDoc);
@@ -814,6 +791,8 @@ namespace JackParser
                     JackParser.AddToken(rootPramList, varNameToken, String.Empty, TokenTypes.identifier, null);
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
+
+                    paramCount++;
                     if (JackParser.GetFirstTokenText(tokensDoc) == ",")
                     {
                         isMiltipleVars = true;
@@ -835,6 +814,7 @@ namespace JackParser
                 ex.ToString();
 
             }
+            return paramCount++; 
         }
 
         /// <summary>
@@ -845,7 +825,7 @@ namespace JackParser
         private static List<string> GetValidTypeName(string classNameCandidate)
         {
             bool isClassName = JackParser.IsClassName(classNameCandidate);
-            List<string> possibleTexts = new List<string>(JackParser._variablesTypes);
+            List<string> possibleTexts = new List<string>(SymbolClassifications._variablesTypes);
             if (isClassName) { possibleTexts.Add(classNameCandidate.Trim()); }
             return possibleTexts;
         }
@@ -976,28 +956,28 @@ namespace JackParser
             {
                 case "let":
                     JackParser.AppendLetStatement(rootStatement, tokensDoc);
+                    VMCodeWriter.AddLetStatement(rootStatement);
                     break;
                 case "if":
                     JackParser.AppendIfStatement(rootStatement, tokensDoc);
+                    VMCodeWriter.AddIfStatement(rootStatement);
                     break;
                 case "while":
                     JackParser.AppendWhileStatement(rootStatement, tokensDoc);
+                    VMCodeWriter.AddWhileStatement(rootStatement);
                     break;
                 case "do":
                     JackParser.AppendDoStatement(rootStatement, tokensDoc);
+                    VMCodeWriter.AddDoStatement(rootStatement);
                     break;
                 case "return":
                     JackParser.AppendReturnStatement(rootStatement, tokensDoc);
+                    VMCodeWriter.AddReturnStatement(rootStatement);
                     break;
                 default:
                     throw new Exception(String.Format("Unknown statement type ({0})", firstStatementNodeString));
             }
-            /*Example*/
-            //XmlNode varTypeToken = JackParser.GetNextToken(tokensDoc);
-            //List<string> possibleTexts = JackParser.GetValidTypeName(varTypeToken.InnerText);
-            //JackParser.AddToken(rootPramList, varTypeToken, possibleTexts, TokenTypes.keyword, ProgramStructureNodes.type.ToStringByDescription());
-            ////token was handled, remove it
-            //JackParser.RemoveFirstToken(tokensDoc);
+            
         }
 
         private static void AppendReturnStatement(XmlNode parentNode, XmlDocument tokensDoc)
@@ -1551,7 +1531,7 @@ namespace JackParser
             bool isLegalIdentifier = regex.Match(cleanCandidate).Success;
 
             //makes sense that a keyword cannot be an identifer, but it does not seem to be the case according to class PPT
-            isLegalIdentifier &= !JackParser._allKeyWords.Contains(cleanCandidate);
+            isLegalIdentifier &= !SymbolClassifications._allKeyWords.Contains(cleanCandidate);
 
             return isLegalIdentifier;
         }
@@ -1567,7 +1547,7 @@ namespace JackParser
         {
             XmlNode nextNode = JackParser.GetNextToken(tokensDoc);
             string firstStatementNodeString = (nextNode == null ? String.Empty : nextNode.InnerText).Trim();
-            return JackParser._oparations.Contains(firstStatementNodeString);
+            return SymbolClassifications._oparations.Contains(firstStatementNodeString);
         }
 
         /// <summary>
@@ -1581,7 +1561,7 @@ namespace JackParser
         {
             XmlNode nextNode = JackParser.GetNextToken(tokensDoc);
             string firstStatementNodeString = (nextNode == null ? String.Empty : nextNode.InnerText).Trim();
-            return JackParser._statementsHeaders.Contains(firstStatementNodeString);
+            return SymbolClassifications._statementsHeaders.Contains(firstStatementNodeString);
         }
 
         /// <summary>
@@ -1601,7 +1581,7 @@ namespace JackParser
                 string text = JackParser.GetFirstTokenText(tokensDoc);
 
                 isVarDecBegining = tType == TokenTypes.keyword 
-                    && (JackParser._classVariablesModifiers.Contains(text) || JackParser._variablesModifiers.Contains(text));
+                    && (SymbolClassifications._classVariablesModifiers.Contains(text) || SymbolClassifications._variablesModifiers.Contains(text));
             }
             catch (Exception)
             {
@@ -1630,7 +1610,7 @@ namespace JackParser
                 TokenTypes tType = GetNextTokenType(tokensDoc);
                 string text = JackParser.GetFirstTokenText(tokensDoc);
 
-                issubRoutinBegining = tType == TokenTypes.keyword && JackParser._subRoutineModifiers.Contains(text);
+                issubRoutinBegining = tType == TokenTypes.keyword && SymbolClassifications._subRoutineModifiers.Contains(text);
             }
             catch (Exception)
             {
@@ -1645,7 +1625,7 @@ namespace JackParser
         private static bool IsNextNodeTerm_UnaryOpAndTerm(XmlDocument tokensDoc)
         {
             string text = JackParser.GetFirstTokenText(tokensDoc);
-            return JackParser._unariOparations.Contains(text);
+            return SymbolClassifications._unariOparations.Contains(text);
         }
 
         private static bool IsNextNodeTerm_ExpressionInBrackets(XmlDocument tokensDoc)
@@ -1692,7 +1672,7 @@ namespace JackParser
         private static bool IsNextNodeTerm_keywordConstant(XmlDocument tokensDoc)
         {
             string text = JackParser.GetFirstTokenText(tokensDoc);
-            return JackParser._constantKeyWords.Contains(text);
+            return SymbolClassifications._constantKeyWords.Contains(text);
         }
 
         private static bool IsNextNodeTerm_stringConstant(XmlDocument tokensDoc)
