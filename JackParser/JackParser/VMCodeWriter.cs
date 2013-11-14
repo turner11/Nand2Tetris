@@ -10,11 +10,23 @@ namespace JackParser
     class VMCodeWriter
     {
         #region Data members
+
+        static event EventHandler<VmCodeChangedArgs> onVmCodeChanged;
+
         static string _vmCode;
         public static string VmCode
         {
             get { return _vmCode; }
-            set { _vmCode = value; }
+            set
+            {
+                _vmCode = value ?? String.Empty;
+                if (VMCodeWriter.onVmCodeChanged != null)
+                {
+                    VmCodeChangedArgs e = new VmCodeChangedArgs();
+                    e.vm_code = _vmCode;
+                    VMCodeWriter.onVmCodeChanged(null, e);
+                }
+            }
         }
 
 
@@ -65,8 +77,21 @@ namespace JackParser
             VMCodeWriter._functionTypeByName = new Dictionary<string, FunctionType>();
             VMCodeWriter._localVariables = new BiDictionary<string, int>();
             VMCodeWriter._staticVariables = new BiDictionary<string, int>();
-            VMCodeWriter._vmCode = String.Empty;
+            VMCodeWriter.VmCode = String.Empty;
             VMCodeWriter.ClassName = String.Empty;
+
+            VMCodeWriter.onVmCodeChanged += VMCodeWriter_onVmCodeChanged;
+        }
+
+        static void VMCodeWriter_onVmCodeChanged(object sender, VmCodeChangedArgs e)
+        {
+           /*This is for easier debugging...*/
+            //e.vm_code.ToString();
+            if (e.vm_code.Trim().EndsWith("call Math.divide 2"))
+            {
+                /*this is a progrematic break point*/
+                //System.Diagnostics.Debugger.Break();
+            }
         }
         #endregion
 
@@ -141,15 +166,15 @@ namespace JackParser
         internal static void AddLetStatement(XmlNode statementNode)
         {
             VMCodeWriter.GetVmCodeFromStatementsExpression(statementNode);
-            
+
             XmlNode identifier = statementNode.SelectSingleNode("letStatement/identifier");
             string varName = identifier.InnerText;
 
-            VMCodeWriter.WritePopStatement(varName);      
-           
+            VMCodeWriter.WritePopStatement(varName);
+
         }
 
-        
+
 
         /// <summary>
         /// Gets the segment and index by variable by it's name.
@@ -169,7 +194,7 @@ namespace JackParser
             }
         }
 
-      
+
 
         /// <summary>
         /// Adds if statement.
@@ -206,7 +231,7 @@ namespace JackParser
         internal static void AddReturnStatement(XmlNode statementNode)
         {
             throw new NotImplementedException();
-        } 
+        }
         #endregion
 
         /// <summary>
@@ -265,12 +290,12 @@ namespace JackParser
                 }
             }
 
-           
+
             return dic;
         }
 
 
-        
+
 
 
         /// <summary>
@@ -339,10 +364,10 @@ namespace JackParser
         private static void WriteClassMemoryAllocation()
         {
             List<StackArgumentObject> argumets = new List<StackArgumentObject>();
-            argumets.Add(new StackArgumentObject(Segments.constant,VMCodeWriter._classVaraibles.Count));
-           
-            VMCodeWriter.WriteCallFunction("Memory.alloc",argumets);
-            VMCodeWriter.WritePopStatement(new StackArgumentObject(Segments.pointer,0));
+            argumets.Add(new StackArgumentObject(Segments.constant, VMCodeWriter._classVaraibles.Count));
+
+            VMCodeWriter.WriteCallFunction("Memory.alloc", argumets);
+            VMCodeWriter.WritePopStatement(new StackArgumentObject(Segments.pointer, 0));
         }
 
         /// <summary>
@@ -377,7 +402,7 @@ namespace JackParser
         private static void WriteFunctionDeclaration(FunctionType fType, string name, int argCount)
         {
             VMCodeWriter._functionTypeByName.Add(name, fType);
-            VMCodeWriter.VmCode += String.Format("function CircleMaker.{0} {1}", name, argCount)+Environment.NewLine;
+            VMCodeWriter.VmCode += String.Format("function CircleMaker.{0} {1}", name, argCount) + Environment.NewLine;
         }
         /// <summary>
         /// Gets the dictionary by sprcified segment.
@@ -413,7 +438,7 @@ namespace JackParser
         {
             XmlNode expressionNode = VMCodeWriter.GetExpressionNodeFromStatement(statementNode);
             VMCodeWriter.ExpressionNodeToVmCode(expressionNode);
-            
+
         }
 
         /// <summary>
@@ -429,12 +454,12 @@ namespace JackParser
             //return;
             //splittedExpressions.ToString();
             string retString = String.Empty;
-            
+
             string currString = expressionNode.InnerText;
             //string rp = ReversePolishHandler.ToReversePolish(tokens);
             WriteExpressionVM(currString);
-            
-            
+
+
 
 
         }
@@ -448,7 +473,7 @@ namespace JackParser
             }
             else
             {
-                var varDic = VMCodeWriter.GetDictionaryByVariableName(currExpression); 
+                var varDic = VMCodeWriter.GetDictionaryByVariableName(currExpression);
                 bool isVariable = varDic != null;
                 if (isVariable)//expression is a variable
                 {
@@ -456,10 +481,11 @@ namespace JackParser
                 }
                 else if (currExpression.Any(c => SymbolClassifications._oparations.Contains(c.ToString()))) //expression is in form of (exp1 OP exp2) OR (UNARYOP exp)
                 {
-                    var emuStrings=
-                        currExpression.Select<char,string>(c => SymbolClassifications._oparations.Contains(c.ToString()) ? "@" + c + "@" : c.ToString());
+                    var emuStrings =
+                        currExpression.Select<char, string>(c => SymbolClassifications._oparations.Contains(c.ToString()) ? "@" + c + "@" : c.ToString());
                     string revisedExpression = String.Join(String.Empty, emuStrings);
                     string[] splittedExpressions = revisedExpression.Split(new string[] { "@" }, 3, StringSplitOptions.RemoveEmptyEntries);
+                    splittedExpressions = splittedExpressions.Select(s => s.Replace("@",String.Empty)).ToArray();
                     if (splittedExpressions.Length == 2)//(UNARYOP exp)
                     {
                         string exp1 = splittedExpressions[1];
@@ -482,12 +508,12 @@ namespace JackParser
                     }
 
                 }
-                else if (Regex.IsMatch(currExpression,"^[a-zA-Z_][a-z*A-Z*_*0-9*]*[(]",RegexOptions.None))//function call
+                else if (Regex.IsMatch(currExpression, "^[a-zA-Z_][a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
                 {
                     int openBrackIdx = currExpression.IndexOf("(");
                     int closeBrackIdx = currExpression.IndexOf("(");
-                    List<string> expressions = 
-                        currExpression.Substring(openBrackIdx+1, currExpression.Length - 2- closeBrackIdx).Split(new char[]{
+                    List<string> expressions =
+                        currExpression.Substring(openBrackIdx + 1, currExpression.Length - 2 - closeBrackIdx).Split(new char[]{
                        ','}).ToList();
                     //writing parameter expressions
                     for (int i = 0; i < expressions.Count; i++)
@@ -501,34 +527,51 @@ namespace JackParser
                 }
                 else
                 {
-                    throw new Exception("Failed to recognize expression structure: "+currExpression);
+                    throw new Exception("Failed to recognize expression structure: " + currExpression);
                 }
             }
         }
 
-        
+
 
         private static void WriteBinaryOperation(string @operator, string destinationVarName)
         {
-            Dictionary<string, string> operationsNames = new Dictionary<string, string>()
+            /*speacial cases*/
+            if (@operator == "*")
             {
-                {"+","add"},
-                {"-","sub"},
-                {"=","eq"},
-                {">","gt"},
-                {"<","lt"},
-                {"&","and"},
-                {"|","or"},
+                VMCodeWriter.WriteCallFunction("Math.multiply", 2);
 
-            };
-
-            string operation = operationsNames[@operator];
-            VMCodeWriter._vmCode += operation + Environment.NewLine;
-            
-            if (!String.IsNullOrWhiteSpace(destinationVarName))
-            {
-                VMCodeWriter.WritePopStatement(destinationVarName);
             }
+            else if (@operator == "/")
+            {
+                VMCodeWriter.WriteCallFunction("Math.divide", 2);
+            }
+            else //Actually an OS operator
+            {
+                Dictionary<string, string> operationsNames = new Dictionary<string, string>()
+                {
+                    {"+","add"},
+                    {"-","sub"},
+                    {"=","eq"},
+                    {">","gt"},
+                    {"<","lt"},
+                    {"&","and"},
+                    {"|","or"},                
+
+                };
+
+                string operation = operationsNames[@operator];
+                VMCodeWriter.VmCode += operation + Environment.NewLine;
+
+                if (!String.IsNullOrWhiteSpace(destinationVarName))
+                {
+                    VMCodeWriter.WritePopStatement(destinationVarName);
+                }
+            }
+
+
+
+
         }
 
         private static void WriteUnaryOperation(string @operator, string destinationVarName)
@@ -541,7 +584,7 @@ namespace JackParser
             };
 
             string operation = operationsNames[@operator];
-            VMCodeWriter._vmCode += operation + Environment.NewLine;
+            VMCodeWriter.VmCode += operation + Environment.NewLine;
 
             if (!String.IsNullOrWhiteSpace(destinationVarName))
             {
@@ -565,8 +608,8 @@ namespace JackParser
                     //stop condition
 
                 }
-                
-               
+
+
             }
         }
 
@@ -619,7 +662,7 @@ namespace JackParser
 
             var tokens = VMCodeWriter.GetAllNodeTextRecursive(expressionNode);
             return tokens;
-                
+
         }
 
         private static List<string> GetAllNodeTextRecursive(XmlNode node)
@@ -638,7 +681,7 @@ namespace JackParser
             return text;
         }
 
-        
+
 
         /// <summary>
         /// Gets the expression node from statement node.
@@ -663,8 +706,8 @@ namespace JackParser
             return expressionNode;
         }
 
-        
-        
+
+
     }
 
 
@@ -698,5 +741,12 @@ namespace JackParser
         Method,
         Function
     }
+
+    class VmCodeChangedArgs: EventArgs
+    {
+        public string vm_code;
+        
+    }
+
     #endregion
 }
