@@ -23,38 +23,6 @@ namespace JackParser
         static int _DEBUG_xmlRowNumber = 0;
 
 
-        #region C'tor
-        static JackParser()
-        {
-            var srRetTypes = new List<string>(SymbolClassifications._variablesTypes);
-            srRetTypes.Add("void");
-
-            List<string> allKeyWords = new List<string>();
-
-            /*symbols*/
-            List<string> allSymbols = new List<string>() { "[", "]", "{", "}", "(", ")", ".", ",", ";" };
-            allSymbols.AddRange(SymbolClassifications._oparations);
-            allSymbols.AddRange(SymbolClassifications._unariOparations);
-            SymbolClassifications._symbols = new ReadOnlyCollection<string>(allSymbols);
-
-            /*all keywords*/
-            SymbolClassifications._subRoutineReturnType = new ReadOnlyCollection<string>(srRetTypes);
-            allKeyWords.AddRange(SymbolClassifications._generalKeyWords);
-            allKeyWords.AddRange(SymbolClassifications._classVariablesModifiers);
-            allKeyWords.AddRange(SymbolClassifications._subRoutineReturnType);
-            allKeyWords.AddRange(SymbolClassifications._statementsHeaders);
-            allKeyWords.AddRange(SymbolClassifications._oparations);
-            allKeyWords.AddRange(SymbolClassifications._unariOparations);
-            allKeyWords.AddRange(SymbolClassifications._symbols);
-            allKeyWords.AddRange(SymbolClassifications._variablesTypes.Distinct());
-            allKeyWords.AddRange(SymbolClassifications._constantKeyWords);
-            allKeyWords.AddRange(SymbolClassifications._variablesModifiers);
-
-
-            allKeyWords.AddRange(SymbolClassifications._subRoutineModifiers);
-            SymbolClassifications._allKeyWords = new ReadOnlyCollection<string>(allKeyWords.Distinct().ToList());
-        }
-        #endregion
 
         #region Internal Methods
 
@@ -744,7 +712,7 @@ namespace JackParser
         /// <param name="tokensDoc">The tokens doc.</param>
         private static int GetParameterList(XmlNode parentNode, XmlDocument tokensDoc)
         {
-            int paramCount = 0;
+            int paramCount =0;
             //create classVarDec root element
             XmlNode rootPramList = parentNode.OwnerDocument.CreateNode(XmlNodeType.Element, OutputStructureNodes.parameterList.ToStringByDescription(), String.Empty);
             //adding the variable declaration node
@@ -755,14 +723,17 @@ namespace JackParser
             XmlNode nFirst = JackParser.GetNextToken(tokensDoc);
             XmlNode nSecond = nFirst.NextSibling;
 
-            List<string> validTexts = JackParser.GetValidTypeName(nFirst.InnerText);
+            List<string> validTexts;
+            List<Enum> validTokenTypes;
+            GetValidTextAndType(nFirst, out validTexts, out validTokenTypes);
+
             //is it a type?
-            bool hasParams = JackParser.ValidateToken(nFirst, validTexts, TokenTypes.keyword, false);
+            bool hasParams = JackParser.ValidateToken(nFirst, validTexts, validTokenTypes, false);
             //is it a name
             hasParams &= nSecond != null && JackParser.IsVariableName(nSecond.InnerText);
             if (!hasParams)
             {
-                return 0 ;
+                return 0;
             }
 
 
@@ -773,12 +744,14 @@ namespace JackParser
                 bool isMiltipleVars = false; // until proven otherwise, we assume we are nor facing "field int x, y;"
                 do
                 {
-                    
                     isMiltipleVars = false;  //resetting
                     /*var type*/
                     XmlNode varTypeToken = JackParser.GetNextToken(tokensDoc);
-                    List<string> possibleTexts = JackParser.GetValidTypeName(varTypeToken.InnerText);
-                    JackParser.AddToken(rootPramList, varTypeToken, possibleTexts, TokenTypes.keyword, OutputStructureNodes.type.ToStringByDescription());
+                    List<Enum> possibleTypes;
+                    List<string> possibleTexts;
+
+                    GetValidTextAndType(varTypeToken, out possibleTexts, out possibleTypes);
+                    JackParser.AddToken(rootPramList, varTypeToken, possibleTexts, possibleTypes, OutputStructureNodes.type.ToStringByDescription());
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
 
@@ -791,7 +764,6 @@ namespace JackParser
                     JackParser.AddToken(rootPramList, varNameToken, String.Empty, TokenTypes.identifier, null);
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
-
                     paramCount++;
                     if (JackParser.GetFirstTokenText(tokensDoc) == ",")
                     {
@@ -814,8 +786,24 @@ namespace JackParser
                 ex.ToString();
 
             }
-            return paramCount++; 
+
+            return paramCount;
         }
+
+        private static void GetValidTextAndType(XmlNode node, out List<string> validTexts, out List<Enum> validTokenTypes)
+        {
+            validTokenTypes = new List<Enum> { TokenTypes.keyword };
+            if (JackParser.IsIdentifier(node.InnerText))
+            {
+                validTexts = JackParser.GetValidTypeName(node.InnerText);
+                validTokenTypes.Add(TokenTypes.identifier);
+            }
+            else
+            {
+                validTexts = JackParser.GetValidTypeName(String.Empty);
+            }
+        }
+
 
         /// <summary>
         /// Gets the list of valid type names.

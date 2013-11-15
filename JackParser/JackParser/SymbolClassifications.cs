@@ -41,7 +41,46 @@ namespace JackParser
 
         internal static ReadOnlyCollection<string> _unariOparations =
             new ReadOnlyCollection<string>(new List<String> { "~", "-", "#" });
+
+        internal static ReadOnlyCollection<string> _allOparations;
         #endregion
 
+
+        static SymbolClassifications()
+        {
+            var srRetTypes = new List<string>(SymbolClassifications._variablesTypes);
+            srRetTypes.Add("void");
+
+            List<string> allKeyWords = new List<string>();
+
+            /*symbols*/
+            List<string> allSymbols = new List<string>() { "[", "]", "{", "}", "(", ")", ".", ",", ";" };
+
+            List<string> allOperations = new List<string>();
+            allOperations.AddRange(SymbolClassifications._oparations);
+            allOperations.AddRange(SymbolClassifications._unariOparations);
+            SymbolClassifications._allOparations = new ReadOnlyCollection<string>(allOperations.Distinct().ToList());
+
+            allSymbols.AddRange(SymbolClassifications._allOparations);
+            
+            SymbolClassifications._symbols = new ReadOnlyCollection<string>(allSymbols);
+
+            /*all keywords*/
+            SymbolClassifications._subRoutineReturnType = new ReadOnlyCollection<string>(srRetTypes);
+            allKeyWords.AddRange(SymbolClassifications._generalKeyWords);
+            allKeyWords.AddRange(SymbolClassifications._classVariablesModifiers);
+            allKeyWords.AddRange(SymbolClassifications._subRoutineReturnType);
+            allKeyWords.AddRange(SymbolClassifications._statementsHeaders);
+            allKeyWords.AddRange(SymbolClassifications._oparations);
+            allKeyWords.AddRange(SymbolClassifications._unariOparations);
+            allKeyWords.AddRange(SymbolClassifications._symbols);
+            allKeyWords.AddRange(SymbolClassifications._variablesTypes.Distinct());
+            allKeyWords.AddRange(SymbolClassifications._constantKeyWords);
+            allKeyWords.AddRange(SymbolClassifications._variablesModifiers);
+
+
+            allKeyWords.AddRange(SymbolClassifications._subRoutineModifiers);
+            SymbolClassifications._allKeyWords = new ReadOnlyCollection<string>(allKeyWords.Distinct().ToList());
+        }
     }
 }

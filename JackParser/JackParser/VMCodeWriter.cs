@@ -85,12 +85,12 @@ namespace JackParser
 
         static void VMCodeWriter_onVmCodeChanged(object sender, VmCodeChangedArgs e)
         {
-           /*This is for easier debugging...*/
+            /*This is for easier debugging...*/
             //e.vm_code.ToString();
-            if (e.vm_code.Trim().EndsWith("call Math.divide 2"))
+            if (e.vm_code.Trim().EndsWith("CircleMaker"))
             {
                 /*this is a progrematic break point*/
-                //System.Diagnostics.Debugger.Break();
+                System.Diagnostics.Debugger.Break();
             }
         }
         #endregion
@@ -230,7 +230,7 @@ namespace JackParser
         /// <param name="statementNode">The node containg statement.</param>
         internal static void AddReturnStatement(XmlNode statementNode)
         {
-            throw new NotImplementedException();
+            VMCodeWriter.VmCode += "return" + Environment.NewLine;
         }
         #endregion
 
@@ -366,32 +366,53 @@ namespace JackParser
             List<StackArgumentObject> argumets = new List<StackArgumentObject>();
             argumets.Add(new StackArgumentObject(Segments.constant, VMCodeWriter._classVaraibles.Count));
 
-            VMCodeWriter.WriteCallFunction("Memory.alloc", argumets);
+            VMCodeWriter.WriteCallFunction("Memory", "alloc", argumets);
             VMCodeWriter.WritePopStatement(new StackArgumentObject(Segments.pointer, 0));
         }
+
 
         /// <summary>
         /// Writes the VM code that calls a function
         /// </summary>
         /// <param name="functionName">Name of the function.</param>
         /// <param name="argumets">The argumets count passed to function</param>
-        private static void WriteCallFunction(string functionName, int argumentCount)
+        private static void WriteCallFunction( string functionName, int argumentCount)
         {
-            VMCodeWriter.VmCode += String.Format("call {0} {1}", functionName, argumentCount) + Environment.NewLine;
+            VMCodeWriter.WriteCallFunction(VMCodeWriter._className, functionName, argumentCount);
+        }
+        /// <summary>
+        /// Writes the VM code that calls a function
+        /// </summary>
+        /// <param name="functionName">Name of the function.</param>
+        /// <param name="argumets">The argumets count passed to function</param>
+        private static void WriteCallFunction(string className, string functionName, int argumentCount)
+        {
+            VMCodeWriter.VmCode += String.Format("call {0}.{1} {2}", className, functionName, argumentCount) + Environment.NewLine;
         }
 
         /// <summary>
-        /// Writes the VM code that calls a function
+        /// Writes the VM code that calls a function, in  context of current class
         /// </summary>
         /// <param name="functionName">Name of the function.</param>
         /// <param name="argumets">The argumets to put in stack for function.</param>
         private static void WriteCallFunction(string functionName, List<StackArgumentObject> argumets)
         {
+            VMCodeWriter.WriteCallFunction(VMCodeWriter._className, functionName, argumets.Count);
+        }
+
+        /// <summary>
+        /// Writes the VM code that calls a function
+        /// </summary>
+        /// <param name="className">Name of the class.</param>
+        /// <param name="functionName">Name of the function.</param>
+        /// <param name="argumets">The argumets to put in stack for function.</param>
+        private static void WriteCallFunction(string className, string functionName, List<StackArgumentObject> argumets)
+        {
             foreach (StackArgumentObject arg in argumets)
             {
                 VMCodeWriter.WritePushStetment(arg);
             }
-            VMCodeWriter.WriteCallFunction(functionName, argumets.Count);
+            VMCodeWriter.WriteCallFunction(className,functionName, argumets.Count);
         }
         /// <summary>
         /// Adds a function declaration to the VM Code.
@@ -459,9 +480,6 @@ namespace JackParser
             //string rp = ReversePolishHandler.ToReversePolish(tokens);
             WriteExpressionVM(currString);
 
-
-
-
         }
 
         private static void WriteExpressionVM(string currExpression)
@@ -479,35 +497,6 @@ namespace JackParser
                 {
                     VMCodeWriter.WritePushStetment(currExpression);
                 }
-                else if (currExpression.Any(c => SymbolClassifications._oparations.Contains(c.ToString()))) //expression is in form of (exp1 OP exp2) OR (UNARYOP exp)
-                {
-                    var emuStrings =
-                        currExpression.Select<char, string>(c => SymbolClassifications._oparations.Contains(c.ToString()) ? "@" + c + "@" : c.ToString());
-                    string revisedExpression = String.Join(String.Empty, emuStrings);
-                    string[] splittedExpressions = revisedExpression.Split(new string[] { "@" }, 3, StringSplitOptions.RemoveEmptyEntries);
-                    splittedExpressions = splittedExpressions.Select(s => s.Replace("@",String.Empty)).ToArray();
-                    if (splittedExpressions.Length == 2)//(UNARYOP exp)
-                    {
-                        string exp1 = splittedExpressions[1];
-                        string @operator = splittedExpressions[0];
-
-                        VMCodeWriter.WriteExpressionVM(exp1);
-
-                        VMCodeWriter.WriteUnaryOperation(@operator, String.Empty);
-                    }
-                    else // (exp1 OP exp2)
-                    {
-                        string exp1 = splittedExpressions[0];
-                        string exp2 = splittedExpressions[2];
-                        string @operator = splittedExpressions[1];
-
-                        VMCodeWriter.WriteExpressionVM(exp1);
-                        VMCodeWriter.WriteExpressionVM(exp2);
-
-                        VMCodeWriter.WriteBinaryOperation(@operator, String.Empty);
-                    }
-
-                }
                 else if (Regex.IsMatch(currExpression, "^[a-zA-Z_][a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
                 {
                     int openBrackIdx = currExpression.IndexOf("(");
@@ -521,16 +510,120 @@ namespace JackParser
                         //recursion
                         VMCodeWriter.WriteExpressionVM(expressions[i]);
                     }
-                    throw new NotImplementedException("Stas, this where i got so far...");
-                    //string functionName =Str;
-                    //VMCodeWriter.WriteCallFunction(functionName,expressions.Count);
+
+                    string functionName = currExpression.Substring(0, openBrackIdx);
+                    VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
                 }
+                else if (currExpression.Any(c => SymbolClassifications._allOparations.Contains(c.ToString())))
+                {
+                    //expression is in form of (exp1 OP exp2) OR (UNARYOP exp)
+
+                    
+                    var splittedExpressions = VMCodeWriter.GetSubExpressions(currExpression);
+
+
+                    bool isUnaric = 
+                        splittedExpressions.Count == 1 && SymbolClassifications._unariOparations.Contains(splittedExpressions[0][0].ToString());
+                    if (isUnaric)//(UNARYOP exp)
+                    {
+                        string exp = currExpression.Substring(1, currExpression.Length - 1);
+                        VMCodeWriter.WriteExpressionVM(exp);
+                        string @operator = currExpression[0].ToString();
+                        VMCodeWriter.WriteUnaryOperation(@operator, String.Empty);
+                    }
+                    else // (exp1 OP exp2)
+                    {
+                        string exp1 = splittedExpressions[0];
+                        if (exp1.StartsWith("("))
+                        {
+                            exp1 = exp1.Substring(0, exp1.Length - 2);//stripping external brackets
+                        }
+
+                        string exp2 = splittedExpressions[2];
+                        string @operator = splittedExpressions[1];
+
+                        VMCodeWriter.WriteExpressionVM(exp1);
+                        VMCodeWriter.WriteExpressionVM(exp2);
+
+                        VMCodeWriter.WriteBinaryOperation(@operator, String.Empty);
+                    }
+                }                
                 else
                 {
                     throw new Exception("Failed to recognize expression structure: " + currExpression);
                 }
             }
         }
+
+        private static List<string> GetSubExpressions(string currExpression)
+        {
+            List<string> splittedExpressions = null;
+            //string firstOperand = currExpression.Substring;
+            var emuStrings =
+            currExpression.Select<char, string>(c => SymbolClassifications._oparations.Contains(c.ToString()) ? "@" + c + "@" : c.ToString());
+            string revisedExpression = String.Join(String.Empty, emuStrings);
+            splittedExpressions = revisedExpression.Split(new string[] { "@" }, StringSplitOptions.RemoveEmptyEntries).ToList();
+            splittedExpressions = splittedExpressions.Select(s => s.Replace("@", String.Empty)).ToList();
+
+            //keep brackets in tackt
+            for (int i = 0; i < splittedExpressions.Count - 1; i++)
+            {
+                int bCount = 0;
+                if (splittedExpressions[i].Contains("("))
+                {
+                    bCount++;
+                    bool closed = false;
+                    while (!closed)
+                    {
+                        if (splittedExpressions[i + 1].Contains("("))
+                            bCount++;
+                        if (splittedExpressions[i + 1].Contains(")"))
+                            bCount--;
+
+                        splittedExpressions[i] += splittedExpressions[i + 1];
+                        splittedExpressions.RemoveAt(i + 1);
+
+                        if (bCount == 0)
+                        {
+                            closed = true;
+                        }
+                    }
+                }
+            }
+
+            string firstExp = splittedExpressions[0];
+            int expCount = SymbolClassifications._allOparations.Contains(firstExp) ? 0 : 1;
+
+
+            bool haveFullExpression = expCount == 2 || splittedExpressions.Count == 3 || splittedExpressions.Count == 1;
+                while (!haveFullExpression)
+                {
+                    string currToken = splittedExpressions[1];
+
+                    splittedExpressions[0] += currToken;
+                    splittedExpressions.RemoveAt(1);
+
+                    bool isOperation = SymbolClassifications._allOparations.Contains(currToken);
+                    if (!isOperation)
+                    {
+                        expCount++;
+                    }
+                    haveFullExpression = expCount == 2 || splittedExpressions.Count == 1;
+                }
+            
+
+            //collapse to 3 cells
+                while(splittedExpressions.Count >3)
+                {
+                    splittedExpressions[2] += splittedExpressions[3];
+                    splittedExpressions.RemoveAt(3);
+                }
+
+
+            return splittedExpressions;
+        }
+
+
 
 
 
@@ -539,12 +632,12 @@ namespace JackParser
             /*speacial cases*/
             if (@operator == "*")
             {
-                VMCodeWriter.WriteCallFunction("Math.multiply", 2);
+                VMCodeWriter.WriteCallFunction("Math","multiply", 2);
 
             }
             else if (@operator == "/")
             {
-                VMCodeWriter.WriteCallFunction("Math.divide", 2);
+                VMCodeWriter.WriteCallFunction("Math", "divide", 2);
             }
             else //Actually an OS operator
             {
@@ -742,10 +835,10 @@ namespace JackParser
         Function
     }
 
-    class VmCodeChangedArgs: EventArgs
+    class VmCodeChangedArgs : EventArgs
     {
         public string vm_code;
-        
+
     }
 
     #endregion
