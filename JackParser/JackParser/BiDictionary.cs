@@ -44,6 +44,12 @@ namespace JackParser
         {
             return firstToSecond.ContainsKey(key);
         }
+
+        internal void Clear()
+        {
+            firstToSecond.Clear();
+            secondToFirst.Clear();
+        }
     }
 
 }

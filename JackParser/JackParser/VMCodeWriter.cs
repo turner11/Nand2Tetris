@@ -1,5 +1,10 @@
-﻿using System;
+﻿#if DEBUG
+    //#define WRITE_COMMENTS
+#endif
+
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -12,6 +17,9 @@ namespace JackParser
         #region Data members
 
         static event EventHandler<VmCodeChangedArgs> onVmCodeChanged;
+        static Action<GotLocalVariablesCount> onGotFunctionsLocalVariableNumber;
+
+        static int _whileExpressionCount = 0;
 
         static string _vmCode;
         public static string VmCode
@@ -29,6 +37,14 @@ namespace JackParser
             }
         }
 
+        static int _codeLines
+        {
+            get
+            {
+                int count = _vmCode.Split(new string[]{Environment.NewLine},StringSplitOptions.None).Length-1;
+                return count;
+            }
+        }
 
         static string _className;
         public static string ClassName
@@ -65,7 +81,12 @@ namespace JackParser
             set { _classVaraibles = value; }
         }
 
+        static BiDictionary<string, int> _this;
+        static BiDictionary<string, int> _that;
+
         static Dictionary<string, FunctionType> _functionTypeByName;
+
+        static bool _isWritingConstructor;
 
         #endregion
 
@@ -77,6 +98,10 @@ namespace JackParser
             VMCodeWriter._functionTypeByName = new Dictionary<string, FunctionType>();
             VMCodeWriter._localVariables = new BiDictionary<string, int>();
             VMCodeWriter._staticVariables = new BiDictionary<string, int>();
+            VMCodeWriter._that = new BiDictionary<string, int>();
+            VMCodeWriter._that.Add("that", 0);
+            VMCodeWriter._this = new BiDictionary<string, int>();
+            VMCodeWriter._this.Add("this", 0);
             VMCodeWriter.VmCode = String.Empty;
             VMCodeWriter.ClassName = String.Empty;
 
@@ -87,9 +112,11 @@ namespace JackParser
         {
             /*This is for easier debugging...*/
             //e.vm_code.ToString();
-            if (e.vm_code.Trim().EndsWith("CircleMaker"))
+            if (e.vm_code.Trim().Contains("call CircleMaker.Memory.deAlloc 1"))                
+            //if (e.vm_code.Trim().EndsWith("pop local 3"))
+            //if (_codeLines >70)            
             {
-                /*this is a progrematic break point*/
+                /*this is a progrematic breakpoint*/
                 System.Diagnostics.Debugger.Break();
             }
         }
@@ -102,24 +129,33 @@ namespace JackParser
         /// <param name="variableModifier">The variable modifier.</param>
         /// <param name="varName">Name of the variable.</param>
         /// <exception cref="System.Exception">Got unknown modifier for variable: +variableModifier</exception>
-        internal static void AddVariablbe(string variableModifier, string varName)
+        internal static void AddVariablbe(string variableModifier, string varName, bool isArgument)
         {
             BiDictionary<string, int> varDic;
-            if (String.Equals(variableModifier, "field", StringComparison.OrdinalIgnoreCase))
+            if (isArgument)
             {
-                varDic = VMCodeWriter._classVaraibles;
-            }
-            else if (String.Equals(variableModifier, "static", StringComparison.OrdinalIgnoreCase))
-            {
-                varDic = VMCodeWriter._staticVariables;
-            }
-            else if (String.Equals(variableModifier, "var", StringComparison.OrdinalIgnoreCase))
-            {
-                varDic = VMCodeWriter._localVariables;
+                varDic = VMCodeWriter._arguments;
             }
             else
             {
-                throw new Exception("Got unknown modifier for variable: " + variableModifier);
+
+
+                if (String.Equals(variableModifier, "field", StringComparison.OrdinalIgnoreCase))
+                {
+                    varDic = VMCodeWriter._classVaraibles;
+                }
+                else if (String.Equals(variableModifier, "static", StringComparison.OrdinalIgnoreCase))
+                {
+                    varDic = VMCodeWriter._staticVariables;
+                }
+                else if (String.Equals(variableModifier, "var", StringComparison.OrdinalIgnoreCase))
+                {
+                    varDic = VMCodeWriter._localVariables;
+                }
+                else
+                {
+                    throw new Exception("Got unknown modifier for variable: " + variableModifier);
+                }
             }
             int varIdx = varDic.Count;
             varDic.Add(varName, varIdx);
@@ -131,9 +167,8 @@ namespace JackParser
         /// </summary>
         /// <param name="fModifier">The f modifier.</param>
         /// <param name="name">The name.</param>
-        /// <param name="argCount">The number of arguments passed to function.</param>
         /// <exception cref="System.Exception">Got unkown function modifier</exception>
-        internal static void AddFunction(string fModifier, string name, int argCount)
+        internal static void AddFunctionDeclaration(string fModifier, string name)
         {
             FunctionType fType;
             bool isConstructor = String.Equals(fModifier, "constructor");
@@ -142,21 +177,49 @@ namespace JackParser
             if (isConstructor || isFunction)
             {
                 fType = FunctionType.Function;
+
             }
             else if (isMethod)
             {
                 fType = FunctionType.Method;
+                VMCodeWriter.AddVariablbe(String.Empty, "dummy this", true);
             }
             else
             {
                 throw new ArgumentException("Got unkown function modifier: " + fModifier);
             }
-            WriteFunctionDeclaration(fType, name, argCount);
-            if (isConstructor)
-            {
-                VMCodeWriter.WriteClassMemoryAllocation();
-            }
+            /*Note local variables countwill be added with body*/
+            VMCodeWriter._functionTypeByName.Add(name, fType);           
+            VMCodeWriter._isWritingConstructor = isConstructor;
 
+            Action<GotLocalVariablesCount> aWriteFunc = null;
+            aWriteFunc = (GotLocalVariablesCount varsCountArgs) =>
+            {
+                WriteFunctionDeclaration(VMCodeWriter._className, name, varsCountArgs.variablesCount);
+                
+                if (VMCodeWriter._isWritingConstructor)
+                {
+                    VMCodeWriter.WriteClassMemoryAllocation();
+                }
+
+                if (isMethod)
+                {
+                    VMCodeWriter.WriteMethodInstancePushStetment();
+                }
+                onGotFunctionsLocalVariableNumber -= aWriteFunc;
+            };
+
+            onGotFunctionsLocalVariableNumber += aWriteFunc;
+
+            
+            
+
+        }
+
+        private static void WriteMethodInstancePushStetment()
+        {
+            VMCodeWriter.WritePushStetment(Segments.argument,0);
+            VMCodeWriter.WritePopStatement(Segments.pointer,0);
         }
 
         /// <summary>
@@ -202,6 +265,7 @@ namespace JackParser
         /// <param name="statementNode">The node containg statement</param>        
         internal static void AddIfStatement(XmlNode statementNode)
         {
+            
             throw new NotImplementedException();
         }
 
@@ -212,7 +276,14 @@ namespace JackParser
         /// <exception cref="System."></exception>
         internal static void AddWhileStatement(XmlNode statementNode)
         {
-            throw new NotImplementedException();
+            XmlNode expression = VMCodeWriter.GetExpressionNodeFromStatement(statementNode);
+
+            VMCodeWriter.VmCode += "label WHILE_EXP" + _whileExpressionCount + Environment.NewLine;
+            VMCodeWriter.ExpressionNodeToVmCode(expression);
+            VMCodeWriter.VmCode += "not" + Environment.NewLine;
+            VMCodeWriter.VmCode += "if-goto WHILE_END" + (_whileExpressionCount) + Environment.NewLine;
+            _whileExpressionCount++;
+            
         }
 
         /// <summary>
@@ -221,7 +292,40 @@ namespace JackParser
         /// <param name="statementNode">The node containg statement.</param>
         internal static void AddDoStatement(XmlNode statementNode)
         {
-            throw new NotImplementedException();
+            //<doStatement><keyword>do</keyword><subroutineCall><identifier>Memory</identifier><symbol>.</symbol><identifier>deAlloc</identifier><symbol>(</symbol><expressionList><expression><term><keywordConstant><keyword>this</keyword></keywordConstant></term></expression></expressionList><symbol>)</symbol></subroutineCall><symbol>;</symbol></doStatement>"
+
+            
+            string xPath = "doStatement/subroutineCall";
+            XmlNode callNode = statementNode.SelectSingleNode(xPath);
+            string nodeText = callNode.InnerText;
+
+            int idxOpenBracket = nodeText.IndexOf("(");
+            int idxEndBracket = nodeText.IndexOf(")");
+            string argsStr = nodeText.Substring(idxOpenBracket+1, idxEndBracket - idxOpenBracket-1);
+            string[] args = argsStr.Split(new char[] { ',' },StringSplitOptions.RemoveEmptyEntries);
+
+            string functionCallStr = nodeText.Substring(0, idxOpenBracket);
+            
+            int argCount = args.Length;
+
+
+            List<StackArgumentObject> argsList = new List<StackArgumentObject>();
+            for (int i = 0; i < args.Length; i++)
+			{
+                Segments segment;
+                int idx;
+                GetSegmentAndIndexByVariableName(args[i],out segment, out idx);
+                StackArgumentObject argObj = new StackArgumentObject(segment, idx);
+                argsList.Add(argObj);
+			}
+
+            VMCodeWriter.WriteCallFunction(functionCallStr, argsList);
+
+            WritePopStatement(Segments.temp, 0);
+            
+
+
+            
         }
 
         /// <summary>
@@ -230,7 +334,30 @@ namespace JackParser
         /// <param name="statementNode">The node containg statement.</param>
         internal static void AddReturnStatement(XmlNode statementNode)
         {
+            XmlNode expressionNode = GetExpressionNodeFromStatementNode(statementNode);
+            if (expressionNode != null)
+            {
+                VMCodeWriter.ExpressionNodeToVmCode(expressionNode);
+
+            }
+            else
+            {
+                WritePushStetment(Segments.constant, 0);
+            }
+
+
             VMCodeWriter.VmCode += "return" + Environment.NewLine;
+            VMCodeWriter.Arguments.Clear();
+            VMCodeWriter._isWritingConstructor = false;
+            
+        }
+
+        private static XmlNode GetExpressionNodeFromStatementNode(XmlNode statementNode)
+        {
+            string statementHeaderName = statementNode.FirstChild.Name;
+            string xPath = statementHeaderName + "/expression";
+            XmlNode expressionNode = statementNode.SelectSingleNode(xPath);
+            return expressionNode;
         }
         #endregion
 
@@ -258,6 +385,14 @@ namespace JackParser
             {
                 return Segments.@static;
             }
+            if (dic.Equals(VMCodeWriter._that))
+            {
+                return Segments.that;
+            }
+            if (dic.Equals(VMCodeWriter._this))
+            {
+                return Segments.pointer;
+            }
 
             throw new Exception("failed to get segment by dictionary");
         }
@@ -279,6 +414,8 @@ namespace JackParser
                 VMCodeWriter._classVaraibles,
                 VMCodeWriter._localVariables,
                 VMCodeWriter._staticVariables,
+                VMCodeWriter._that,
+                VMCodeWriter._this
 
             };
             for (int i = 0; i < potentialDics.Count && dic == null; i++)
@@ -316,6 +453,8 @@ namespace JackParser
             int index;
             GetSegmentAndIndexByVariableName(varName, out segment, out index);
 
+            System.Diagnostics.Debug.WriteLine(String.Format(">>>> Pusing '{0}': (semgment {1}; Idx {2})",varName,segment,index));
+
             VMCodeWriter.WritePushStetment(segment, index);
         }
 
@@ -346,7 +485,7 @@ namespace JackParser
             Segments segment;
             int index;
             GetSegmentAndIndexByVariableName(varName, out segment, out index);
-
+            System.Diagnostics.Debug.WriteLine(String.Format(">>>> Poping into '{0}': (semgment {1}; Idx {2})",varName,segment,index));
             VMCodeWriter.WritePopStatement(segment, index);
         }
         /// <summary>
@@ -378,7 +517,17 @@ namespace JackParser
         /// <param name="argumets">The argumets count passed to function</param>
         private static void WriteCallFunction( string functionName, int argumentCount)
         {
-            VMCodeWriter.WriteCallFunction(VMCodeWriter._className, functionName, argumentCount);
+            string[] fCall = functionName.Split(new char[] { '.' }, 2, StringSplitOptions.None);
+            if (fCall.Length == 1)
+            {
+                string funcName = fCall[0];
+                fCall = new string[2] { VMCodeWriter._className, funcName };
+            }
+
+            string className = fCall[0];
+            string fName = fCall[1];
+
+            VMCodeWriter.WriteCallFunction(className, fName, argumentCount);
         }
         /// <summary>
         /// Writes the VM code that calls a function
@@ -397,7 +546,7 @@ namespace JackParser
         /// <param name="argumets">The argumets to put in stack for function.</param>
         private static void WriteCallFunction(string functionName, List<StackArgumentObject> argumets)
         {
-            VMCodeWriter.WriteCallFunction(VMCodeWriter._className, functionName, argumets.Count);
+            VMCodeWriter.WriteCallFunction(functionName, argumets.Count);
         }
 
         /// <summary>
@@ -419,11 +568,10 @@ namespace JackParser
         /// </summary>
         /// <param name="fType">Type of the function.</param>
         /// <param name="name">The name of function.</param>
-        /// <param name="argCount">The number of arguments passed to function.</param>
-        private static void WriteFunctionDeclaration(FunctionType fType, string name, int argCount)
+
+        private static void WriteFunctionDeclaration(string className, string name, int varsCount)
         {
-            VMCodeWriter._functionTypeByName.Add(name, fType);
-            VMCodeWriter.VmCode += String.Format("function CircleMaker.{0} {1}", name, argCount) + Environment.NewLine;
+            VMCodeWriter.VmCode += String.Format("function {0}.{1} {2}", VMCodeWriter.ClassName, name, varsCount) + Environment.NewLine;
         }
         /// <summary>
         /// Gets the dictionary by sprcified segment.
@@ -469,6 +617,10 @@ namespace JackParser
         /// <returns>the expression VM code</returns>
         private static void ExpressionNodeToVmCode(XmlNode expressionNode)
         {
+            if (expressionNode == null)
+            {
+                return;
+            }
             List<string> tokens = VMCodeWriter.GetAllExpressionTokens(expressionNode);
             //VMCodeWriter.ExpressionTokensToVmCode(tokens);
 
@@ -497,13 +649,14 @@ namespace JackParser
                 {
                     VMCodeWriter.WritePushStetment(currExpression);
                 }
-                else if (Regex.IsMatch(currExpression, "^[a-zA-Z_][a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
+                else if (Regex.IsMatch(currExpression, "^[a-zA-Z_][.?a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
                 {
+                    VMCodeWriter.WriteComment(currExpression);
                     int openBrackIdx = currExpression.IndexOf("(");
                     int closeBrackIdx = currExpression.IndexOf("(");
                     List<string> expressions =
                         currExpression.Substring(openBrackIdx + 1, currExpression.Length - 2 - closeBrackIdx).Split(new char[]{
-                       ','}).ToList();
+                       ','},StringSplitOptions.RemoveEmptyEntries).ToList();
                     //writing parameter expressions
                     for (int i = 0; i < expressions.Count; i++)
                     {
@@ -547,12 +700,24 @@ namespace JackParser
 
                         VMCodeWriter.WriteBinaryOperation(@operator, String.Empty);
                     }
-                }                
+                }
+                else if (currExpression == "true")
+                {
+                    VMCodeWriter.WritePushStetment(Segments.constant, 0);
+                    VMCodeWriter.VmCode += "not" + Environment.NewLine;
+                }             
                 else
                 {
                     throw new Exception("Failed to recognize expression structure: " + currExpression);
                 }
             }
+        }
+
+        private static void WriteComment(string currExpression)
+        {
+#if WRITE_COMMENTS
+            VMCodeWriter._vmCode += "# " + currExpression + Environment.NewLine;
+#endif
         }
 
         private static List<string> GetSubExpressions(string currExpression)
@@ -801,6 +966,24 @@ namespace JackParser
 
 
 
+        /// <summary>
+        /// Writes the function local variables count.
+        /// </summary>
+        /// <param name="loaclVarsCount">The loacl vars count.</param>
+        internal static void WriteFunctionLocalVariablesCount(int loaclVarsCount)
+        {
+            if (onGotFunctionsLocalVariableNumber != null)
+            {
+                GotLocalVariablesCount e = new GotLocalVariablesCount(loaclVarsCount);
+                onGotFunctionsLocalVariableNumber(e);
+            }
+            
+        }
+
+        internal static void AddArgument(string varname)
+        {
+            VMCodeWriter._arguments.Add(varname, VMCodeWriter._arguments.Count);
+        }
     }
 
 
@@ -820,6 +1003,7 @@ namespace JackParser
 
     enum Segments
     {
+        temp,
         constant,
         local,
         argument,
@@ -831,7 +1015,9 @@ namespace JackParser
     }
     public enum FunctionType
     {
+        [Description("method")]        
         Method,
+        [Description("function")]
         Function
     }
 
@@ -839,6 +1025,18 @@ namespace JackParser
     {
         public string vm_code;
 
+    }
+
+    class GotLocalVariablesCount : EventArgs
+    {
+        public int variablesCount;
+
+
+        public GotLocalVariablesCount(int varsCount)
+        {
+            this.variablesCount = varsCount;
+        }
+        
     }
 
     #endregion

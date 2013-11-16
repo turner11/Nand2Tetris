@@ -106,16 +106,7 @@ namespace JackParser
             XmlDocument xml;
             XmlDocument tokenClone = (XmlDocument)tokensDoc.Clone();
             tokenClone.NodeRemoved += tokenClone_NodeRemoved;
-            JackParser.GetClass(tokenClone, out xml);
-
-            //XmlNodeList tokens = tokensDoc.FirstChild.ChildNodes;
-            //for (int i = 0; i < tokens.Count; i++)
-            //{
-            //    XmlNode currNode = tokens[i];
-            //    string nodeType = currNode.Name;
-            //    string nodeValue = currNode.InnerText.Trim() ;
-
-            //}
+            JackParser.GetClass(tokenClone, out xml);            
 
             return xml;
 
@@ -270,13 +261,17 @@ namespace JackParser
         /// <param name="classRoot">The class root node.</param>
         /// <param name="tokensDoc">The tokens doc to take nodes from.</param>
         /// <param name="classVariable">if set to <c>true</c> will expect variables for class template, otherwise local variables for subroutine.</param>
-        private static void AppendVariableDeclarations(XmlNode classRoot, XmlDocument tokensDoc, bool classVariable)
+        private static int AppendVariableDeclarations(XmlNode classRoot, XmlDocument tokensDoc, bool classVariable)
         {
-
+            int localVarsCount = 0;
             while (JackParser.IsVarDecBegining(tokensDoc))
             {
-                JackParser.AppendVariableDeclaration(classRoot, tokensDoc, classVariable);
+                int tempVarCount;
+                JackParser.AppendVariableDeclaration(classRoot, tokensDoc, classVariable, out tempVarCount);
+                localVarsCount += tempVarCount;
+                
             }
+            return localVarsCount;
         }
 
         /// <summary>
@@ -288,8 +283,9 @@ namespace JackParser
         /// <param name="classRoot">The class root node.</param>
         /// <param name="tokensDoc">The tokens doc to take nodes from.</param>
         /// <param name="isClassVariable">if set to <c>true</c> will expect variables for class template, otherwise local variables for subroutine.</param>
-        private static void AppendVariableDeclaration(XmlNode classRoot, XmlDocument tokensDoc, bool isClassVariable)
+        private static void AppendVariableDeclaration(XmlNode classRoot, XmlDocument tokensDoc, bool isClassVariable, out int varsCount)
         {
+            varsCount = 0;
             XmlDocument xml = classRoot.OwnerDocument;
             //create classVarDec root element
             OutputStructureNodes nodeType = isClassVariable ? OutputStructureNodes.classVarDec : OutputStructureNodes.varDec;
@@ -321,13 +317,17 @@ namespace JackParser
             {
                 hasAnotherVar = false;
                 XmlNode varNameToken = JackParser.GetNextToken(tokensDoc);
-                bool isvalidName = JackParser.IsVariableName(varNameToken.InnerText);
+                string varname = varNameToken.InnerText;
+                bool isvalidName = JackParser.IsVariableName(varname);
                 /*Not valid name; quit*/
                 if (!isvalidName) { throw new Exception(String.Format("variable name {0} is not valid", varNameToken.InnerText)); }                
                 JackParser.AddToken(rootVarDec, varNameToken, String.Empty, TokenTypes.identifier, null);
-                VMCodeWriter.AddVariablbe(tKeyWordModifier.InnerText, varNameToken.InnerText);
+                VMCodeWriter.AddVariablbe(tKeyWordModifier.InnerText, varNameToken.InnerText, false);
                 //token was handled, remove it
                 JackParser.RemoveFirstToken(tokensDoc);
+
+
+                varsCount++;                
                 if (JackParser.GetFirstTokenText(tokensDoc) == ",")
                 {
                     hasAnotherVar = true;
@@ -361,9 +361,15 @@ namespace JackParser
             //adding the variable declaration node
             classRoot.AppendChild(rootSubDec);
 
-            JackParser.AppendFunctionDecHeader(rootSubDec, tokensDoc);
+            int argCount;
+            string fType;
+            string funcName = JackParser.AppendFunctionDecHeader(rootSubDec, tokensDoc, out argCount, out fType);
 
-            JackParser.AppendFunctionDecBody(tokensDoc, rootSubDec);
+
+            int localVarsCount;
+            JackParser.AppendFunctionDecBody(tokensDoc, rootSubDec, out localVarsCount);
+           
+            
         }
 
         /// <summary>
@@ -371,7 +377,7 @@ namespace JackParser
         /// </summary>
         /// <param name="tokensDoc">The tokens doc.</param>
         /// <param name="rootSubDec">The root sub dec.</param>
-        private static void AppendFunctionDecBody(XmlDocument tokensDoc, XmlNode rootSubDec)
+        private static void AppendFunctionDecBody(XmlDocument tokensDoc, XmlNode rootSubDec, out int localVarsCount)
         {
             XmlDocument xml = rootSubDec.OwnerDocument;
             //create classVarDec root element
@@ -386,8 +392,8 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
 
-            JackParser.AppendVariableDeclarations(rootSubroutineBodyNode, tokensDoc, false);
-
+            localVarsCount = JackParser.AppendVariableDeclarations(rootSubroutineBodyNode, tokensDoc, false);
+            VMCodeWriter.WriteFunctionLocalVariablesCount(localVarsCount);
             JackParser.AppendStatements(rootSubroutineBodyNode, tokensDoc);
 
             /*}------------------------------------------------------------------------*/
@@ -400,10 +406,11 @@ namespace JackParser
         /// <summary>
         /// Appends the function decleration header header.
         /// </summary>
-        /// <param name="tokensDoc">The tokens doc.</param>
         /// <param name="rootSubDec">The root sub dec.</param>
+        /// <param name="tokensDoc">The tokens doc.</param>
+        /// <returns>function name</returns>
         /// <exception cref="System.Exception"></exception>
-        private static void AppendFunctionDecHeader(XmlNode rootSubDec, XmlDocument tokensDoc)
+        private static string AppendFunctionDecHeader(XmlNode rootSubDec, XmlDocument tokensDoc, out int argCount, out string fType)
         {
             /*constructor | function | method------------------------------------------------------------------------*/
             XmlNode tFuncType = JackParser.GetNextToken(tokensDoc);
@@ -432,11 +439,18 @@ namespace JackParser
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
             /*function name------------------------------------------------------------------------*/
-
             XmlNode varfuncNameToken = JackParser.GetNextToken(tokensDoc);
-            bool isvalidName = JackParser.IsSubRoutineName(varfuncNameToken.InnerText);
+            string funcName = varfuncNameToken.InnerText;
+
+            bool isvalidName = JackParser.IsSubRoutineName(funcName);
             /*Not valid name; quit*/
-            if (!isvalidName) { throw new Exception(String.Format("sub-routine name {0} is not valid", varfuncNameToken.InnerText)); }
+            if (!isvalidName) { throw new Exception(String.Format("sub-routine name {0} is not valid", funcName)); }
+
+            
+            fType = tFuncType.InnerText;
+            VMCodeWriter.AddFunctionDeclaration(fType, funcName);
+            
+
 
             JackParser.AddToken(rootSubDec, varfuncNameToken, String.Empty, TokenTypes.identifier, OutputStructureNodes.subroutineName.ToStringByDescription());
            
@@ -449,14 +463,18 @@ namespace JackParser
             JackParser.RemoveFirstToken(tokensDoc);
 
             /*Parameter List------------------------------------------------------------------------*/
-            int paramCount = JackParser.GetParameterList(rootSubDec, tokensDoc);
-            VMCodeWriter.AddFunction(tFuncType.InnerText, varfuncNameToken.InnerText, paramCount);
+           
+            argCount = JackParser.GetParameterList(rootSubDec, tokensDoc);
+            
+           
 
             /*)------------------------------------------------------------------------*/
             XmlNode closeBracket = JackParser.GetNextToken(tokensDoc);
             JackParser.AddToken(rootSubDec, closeBracket, ")", TokenTypes.symbol, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
+
+            return funcName;
         }
 
         /// <summary>
@@ -543,7 +561,9 @@ namespace JackParser
             parentNode.AppendChild(expressionNode);
 
             JackParser.AppendTerm(expressionNode, tokensDoc);
-            JackParser.AppendOpTerms(expressionNode, tokensDoc);
+            JackParser.AppendOpTerms(expressionNode, tokensDoc);   
+         
+
         }
         /// <summary>
         /// Appends the expression list that is composed from nodes at top of tokens Doc to the parent node. Nodes will be removed from tokenns doc.
@@ -741,10 +761,10 @@ namespace JackParser
             try
             {
 
-                bool isMiltipleVars = false; // until proven otherwise, we assume we are nor facing "field int x, y;"
+                bool isMultipleVars = false; // until proven otherwise, we assume we are nor facing "field int x, y;"
                 do
                 {
-                    isMiltipleVars = false;  //resetting
+                    isMultipleVars = false;  //resetting
                     /*var type*/
                     XmlNode varTypeToken = JackParser.GetNextToken(tokensDoc);
                     List<Enum> possibleTypes;
@@ -757,7 +777,8 @@ namespace JackParser
 
                     /*var name*/
                     XmlNode varNameToken = JackParser.GetNextToken(tokensDoc);
-                    bool isvalidName = JackParser.IsVariableName(varNameToken.InnerText);
+                    string varName = varNameToken.InnerText;
+                    bool isvalidName = JackParser.IsVariableName(varName);
                     /*Not valid name; quit*/
                     if (!isvalidName) { throw new Exception(String.Format("variable name {0} is not valid", varNameToken.InnerText)); }
 
@@ -765,16 +786,18 @@ namespace JackParser
                     //token was handled, remove it
                     JackParser.RemoveFirstToken(tokensDoc);
                     paramCount++;
+
+                    VMCodeWriter.AddVariablbe(String.Empty, varName,true);
                     if (JackParser.GetFirstTokenText(tokensDoc) == ",")
                     {
-                        isMiltipleVars = true;
+                        isMultipleVars = true;
 
                         XmlNode commaToken = JackParser.GetNextToken(tokensDoc);
                         JackParser.AddToken(rootPramList, commaToken, ",", TokenTypes.symbol, null);
                         //token was handled, remove it
                         JackParser.RemoveFirstToken(tokensDoc);
                     }
-                } while (isMiltipleVars);
+                } while (isMultipleVars);
 
 
             }
@@ -951,8 +974,7 @@ namespace JackParser
                     VMCodeWriter.AddIfStatement(rootStatement);
                     break;
                 case "while":
-                    JackParser.AppendWhileStatement(rootStatement, tokensDoc);
-                    VMCodeWriter.AddWhileStatement(rootStatement);
+                    JackParser.AppendWhileStatement(rootStatement, tokensDoc);                    
                     break;
                 case "do":
                     JackParser.AppendDoStatement(rootStatement, tokensDoc);
@@ -1035,8 +1057,11 @@ namespace JackParser
             JackParser.AddToken(rootWhileNode, whileToken, "while", TokenTypes.keyword, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
+            
             //'(' Expression ')'
             JackParser.AppendExpressionInBrackets(rootWhileNode, tokensDoc, false);
+
+            VMCodeWriter.AddWhileStatement(parentNode);
 
             //'{' Statements '}'
             JackParser.AppendStatementsInCurlyBrackets(rootWhileNode, tokensDoc);
