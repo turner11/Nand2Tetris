@@ -20,6 +20,8 @@ namespace JackParser
         static Action<GotLocalVariablesCount> onGotFunctionsLocalVariableNumber;
 
         static int _whileExpressionCount = 0;
+        static int _ifExpressionCount = 0;
+        
 
         static string _vmCode;
         public static string VmCode
@@ -265,7 +267,15 @@ namespace JackParser
         /// <param name="statementNode">The node containg statement</param>        
         internal static void AddIfStatement(XmlNode statementNode)
         {
-            
+            XmlNode expression = VMCodeWriter.GetExpressionNodeFromStatement(statementNode);
+            VMCodeWriter.ExpressionNodeToVmCode(expression);
+            VMCodeWriter.VmCode += "eq" + Environment.NewLine;
+
+            VMCodeWriter.VmCode += "if-goto IF_TRUE" + _ifExpressionCount + Environment.NewLine;
+            VMCodeWriter.VmCode += "goto IF_FALSE" + _ifExpressionCount + Environment.NewLine;
+            VMCodeWriter.VmCode += "label IF_TRUE" + _ifExpressionCount + Environment.NewLine;
+
+            _ifExpressionCount++;
             throw new NotImplementedException();
         }
 
@@ -321,6 +331,7 @@ namespace JackParser
 
             VMCodeWriter.WriteCallFunction(functionCallStr, argsList);
 
+            /*TODO: temp!! this is for void*/
             WritePopStatement(Segments.temp, 0);
             
 
@@ -517,6 +528,16 @@ namespace JackParser
         /// <param name="argumets">The argumets count passed to function</param>
         private static void WriteCallFunction( string functionName, int argumentCount)
         {
+            string className;
+            string fName;
+            SplittoClassAndFunctionNames(functionName, out className, out fName);
+
+            VMCodeWriter.WriteCallFunction(className, fName, argumentCount);
+        }
+
+        private static void SplittoClassAndFunctionNames(string functionName, out string className, out string fName)
+        {
+
             string[] fCall = functionName.Split(new char[] { '.' }, 2, StringSplitOptions.None);
             if (fCall.Length == 1)
             {
@@ -524,10 +545,8 @@ namespace JackParser
                 fCall = new string[2] { VMCodeWriter._className, funcName };
             }
 
-            string className = fCall[0];
-            string fName = fCall[1];
-
-            VMCodeWriter.WriteCallFunction(className, fName, argumentCount);
+            className = fCall[0];
+            fName = fCall[1];
         }
         /// <summary>
         /// Writes the VM code that calls a function
@@ -546,7 +565,10 @@ namespace JackParser
         /// <param name="argumets">The argumets to put in stack for function.</param>
         private static void WriteCallFunction(string functionName, List<StackArgumentObject> argumets)
         {
-            VMCodeWriter.WriteCallFunction(functionName, argumets.Count);
+            string className;
+            string fName;
+            SplittoClassAndFunctionNames(functionName, out className, out fName);
+            VMCodeWriter.WriteCallFunction(className, fName, argumets);
         }
 
         /// <summary>

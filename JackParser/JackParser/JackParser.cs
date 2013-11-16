@@ -970,8 +970,7 @@ namespace JackParser
                     VMCodeWriter.AddLetStatement(rootStatement);
                     break;
                 case "if":
-                    JackParser.AppendIfStatement(rootStatement, tokensDoc);
-                    VMCodeWriter.AddIfStatement(rootStatement);
+                    JackParser.AppendIfStatement(rootStatement, tokensDoc);                    
                     break;
                 case "while":
                     JackParser.AppendWhileStatement(rootStatement, tokensDoc);                    
@@ -1081,6 +1080,8 @@ namespace JackParser
             JackParser.RemoveFirstToken(tokensDoc);
             //'(' Expression ')'
             JackParser.AppendExpressionInBrackets(rootIfNode, tokensDoc, false);
+
+            VMCodeWriter.AddIfStatement(parentNode);
 
             //'{' Statements '}'
             JackParser.AppendStatementsInCurlyBrackets(rootIfNode, tokensDoc);
