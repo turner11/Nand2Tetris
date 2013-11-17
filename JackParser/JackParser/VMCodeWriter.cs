@@ -673,21 +673,56 @@ namespace JackParser
                 }
                 else if (Regex.IsMatch(currExpression, "^[a-zA-Z_][.?a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
                 {
-                    VMCodeWriter.WriteComment(currExpression);
-                    int openBrackIdx = currExpression.IndexOf("(");
-                    int closeBrackIdx = currExpression.IndexOf("(");
-                    List<string> expressions =
-                        currExpression.Substring(openBrackIdx + 1, currExpression.Length - 2 - closeBrackIdx).Split(new char[]{
-                       ','},StringSplitOptions.RemoveEmptyEntries).ToList();
-                    //writing parameter expressions
-                    for (int i = 0; i < expressions.Count; i++)
+                    bool isFunctionComposition = currExpression.Split(new String[]{"("},StringSplitOptions.RemoveEmptyEntries).Length > 1;
+                    if (isFunctionComposition )
                     {
-                        //recursion
-                        VMCodeWriter.WriteExpressionVM(expressions[i]);
-                    }
+                        ////more than 1 function
+                        VMCodeWriter.WriteComment(currExpression);
 
-                    string functionName = currExpression.Substring(0, openBrackIdx);
-                    VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
+                        int openBrackIdx;//= currExpression.IndexOf("(");
+                        int closeBrackIdx;//= currExpression.IndexOf(")");
+                        int stratPoint = 0;
+                        VMCodeWriter.GetInternalFunctionIndexes(currExpression, ref stratPoint, out openBrackIdx, out closeBrackIdx);
+
+                        int startIndex = stratPoint + 1;
+                        int length = currExpression.Length - stratPoint - (closeBrackIdx - openBrackIdx);
+                        //int length = currExpression.Length - 1 - (closeBrackIdx - openBrackIdx);
+
+
+
+                        List<string> expressions =
+                            currExpression.Substring(startIndex, length).Split(new char[]{
+                       ','}, StringSplitOptions.RemoveEmptyEntries).ToList();
+                        //writing parameter expressions
+                        for (int i = 0; i < expressions.Count; i++)
+                        {
+                            //recursion
+                            VMCodeWriter.WriteExpressionVM(expressions[i]);
+                        }
+
+                        string functionName = currExpression.Substring(0, openBrackIdx);
+                        VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
+                    }
+                    else
+                    {
+                        //single function
+                        VMCodeWriter.WriteComment(currExpression);
+                        int openBrackIdx = currExpression.IndexOf("(");
+                        int closeBrackIdx = currExpression.IndexOf("(");
+                        List<string> expressions =
+                            currExpression.Substring(openBrackIdx + 1, currExpression.Length - 2 - closeBrackIdx).Split(new char[]{
+                       ','}, StringSplitOptions.RemoveEmptyEntries).ToList();
+                        //writing parameter expressions
+                        for (int i = 0; i < expressions.Count; i++)
+                        {
+                            //recursion
+                            VMCodeWriter.WriteExpressionVM(expressions[i]);
+                        }
+
+                        string functionName = currExpression.Substring(0, openBrackIdx);
+                        VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
+                    }
+                   
                 }
                 else if (currExpression.Any(c => SymbolClassifications._allOparations.Contains(c.ToString())))
                 {
@@ -733,6 +768,47 @@ namespace JackParser
                     throw new Exception("Failed to recognize expression structure: " + currExpression);
                 }
             }
+        }
+
+        private static void GetInternalFunctionIndexes(string str, ref int startIndex, out int openBrackIdx, out int closeBrackIdx)
+        {
+
+            openBrackIdx = str.IndexOf("(", startIndex + 1);
+            char[] reverse = str.ToCharArray();
+            Array.Reverse(reverse);
+            closeBrackIdx = reverse.IndexOf(')', startIndex + 1);
+
+            int nextOpenBrackIdx = str.IndexOf("(", openBrackIdx + 1);
+            int nextCloseBrackIdx = str.IndexOf(")", openBrackIdx + 1);
+            if (nextOpenBrackIdx < nextCloseBrackIdx && nextOpenBrackIdx >=0)
+            {
+                startIndex = nextOpenBrackIdx ;
+                GetInternalFunctionIndexes(str, ref startIndex, out openBrackIdx, out closeBrackIdx);
+            }
+            else
+            {
+                while (closeBrackIdx < openBrackIdx)
+                {
+
+                    openBrackIdx = str.IndexOf(")", openBrackIdx + 1);
+                    closeBrackIdx = str.IndexOf("(", closeBrackIdx + 1);
+
+                    //Break if there is no any opened bracket
+                    //index before closing index
+                    if (closeBrackIdx == -1)
+                    {
+                        break;
+                    }
+
+
+                }
+            }
+            
+            char[] separators = new char[] { '(', ')', '=', ',' };
+            string[] arr = str.Split(separators, StringSplitOptions.RemoveEmptyEntries).Where(x => x.Trim().Length != 0).Select(x => x.Trim()).ToArray();
+            
+
+           // Console.WriteLine("Required index is {0}", openBrackIdx);
         }
 
         private static void WriteComment(string currExpression)
