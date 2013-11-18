@@ -42,6 +42,8 @@ namespace Ex2
             {
                 tokensError = tokenizer.start();
                 parserError = JackParser.JackParser.Start(folder);
+
+                string code = JackParser.VMCodeWriter.VmCode;
                 
             }
             catch (Exception ex)

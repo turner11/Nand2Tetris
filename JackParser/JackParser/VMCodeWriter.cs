@@ -16,6 +16,11 @@ namespace JackParser
     {
         #region Data members
 
+        public static event EventHandler<FunctionTypeEventArgs> onFuncTypeInfoRequired;
+
+        static Stack<int> _IfOpeners = new Stack<int>();
+        static Stack<int> _whileOpeners = new Stack<int>();
+
         static event EventHandler<VmCodeChangedArgs> onVmCodeChanged;
         static Action<GotLocalVariablesCount> onGotFunctionsLocalVariableNumber;
 
@@ -114,9 +119,9 @@ namespace JackParser
         {
             /*This is for easier debugging...*/
             //e.vm_code.ToString();
-            if (e.vm_code.Trim().Contains("call CircleMaker.Memory.deAlloc 1"))                
-            //if (e.vm_code.Trim().EndsWith("pop local 3"))
-            //if (_codeLines >70)            
+            //if (e.vm_code.Trim().Contains("call CircleMaker.Memory.deAlloc 1"))                
+            if (e.vm_code.Trim().EndsWith("push constant 2"))
+            if (_codeLines >370)            
             {
                 /*this is a progrematic breakpoint*/
                 System.Diagnostics.Debugger.Break();
@@ -191,7 +196,13 @@ namespace JackParser
                 throw new ArgumentException("Got unkown function modifier: " + fModifier);
             }
             /*Note local variables countwill be added with body*/
-            VMCodeWriter._functionTypeByName.Add(name, fType);           
+            if (!VMCodeWriter._functionTypeByName.ContainsKey(name))
+            {
+                VMCodeWriter._functionTypeByName.Add(name, fType);  
+            }
+
+            VMCodeWriter._localVariables.Clear();
+                     
             VMCodeWriter._isWritingConstructor = isConstructor;
 
             Action<GotLocalVariablesCount> aWriteFunc = null;
@@ -250,34 +261,34 @@ namespace JackParser
         /// <exception cref="System.Exception">failed to get variable's index</exception>
         private static void GetSegmentAndIndexByVariableName(string varName, out Segments segment, out int index)
         {
-            BiDictionary<string, int> dic = VMCodeWriter.GetDictionaryByVariableName(varName);
-            segment = VMCodeWriter.GetSegmentByDictionary(dic);
-
-            if (!dic.TryGetByFirst(varName, out index))
+            int intVar;
+            bool boolVar;
+            if (int.TryParse(varName, out intVar))
             {
-                throw new Exception("failed to get variable's index");
+                segment = Segments.constant;
+                index = intVar;
             }
+            else if(Boolean.TryParse(varName,out boolVar ))
+            {
+                segment = Segments.constant;
+                index = boolVar?0:-1; //check for both true and false
+            }
+            else
+            {
+                BiDictionary<string, int> dic = VMCodeWriter.GetDictionaryByVariableName(varName);
+                segment = VMCodeWriter.GetSegmentByDictionary(dic);
+
+                if (!dic.TryGetByFirst(varName, out index))
+                {
+                    throw new Exception("failed to get variable's index");
+                }
+            }
+            
         }
 
 
 
-        /// <summary>
-        /// Adds if statement.
-        /// </summary>
-        /// <param name="statementNode">The node containg statement</param>        
-        internal static void AddIfStatement(XmlNode statementNode)
-        {
-            XmlNode expression = VMCodeWriter.GetExpressionNodeFromStatement(statementNode);
-            VMCodeWriter.ExpressionNodeToVmCode(expression);
-            VMCodeWriter.VmCode += "eq" + Environment.NewLine;
-
-            VMCodeWriter.VmCode += "if-goto IF_TRUE" + _ifExpressionCount + Environment.NewLine;
-            VMCodeWriter.VmCode += "goto IF_FALSE" + _ifExpressionCount + Environment.NewLine;
-            VMCodeWriter.VmCode += "label IF_TRUE" + _ifExpressionCount + Environment.NewLine;
-
-            _ifExpressionCount++;
-            throw new NotImplementedException();
-        }
+       
 
         /// <summary>
         /// Adds the while statement.
@@ -292,7 +303,17 @@ namespace JackParser
             VMCodeWriter.ExpressionNodeToVmCode(expression);
             VMCodeWriter.VmCode += "not" + Environment.NewLine;
             VMCodeWriter.VmCode += "if-goto WHILE_END" + (_whileExpressionCount) + Environment.NewLine;
+
+            _whileOpeners.Push(_whileExpressionCount);
             _whileExpressionCount++;
+            
+        }
+
+        internal static void CloseWhileStatement()
+        {
+            int whileCounter = _whileOpeners.Pop();
+            VMCodeWriter.VmCode += "goto WHILE_EXP" + whileCounter+Environment.NewLine;
+            VMCodeWriter.VmCode += "label WHILE_END" + whileCounter+ Environment.NewLine;
             
         }
 
@@ -304,38 +325,30 @@ namespace JackParser
         {
             //<doStatement><keyword>do</keyword><subroutineCall><identifier>Memory</identifier><symbol>.</symbol><identifier>deAlloc</identifier><symbol>(</symbol><expressionList><expression><term><keywordConstant><keyword>this</keyword></keywordConstant></term></expression></expressionList><symbol>)</symbol></subroutineCall><symbol>;</symbol></doStatement>"
 
+            string xmlExpressionList = "doStatement/subroutineCall/expressionList";
+            XmlNode expressionListNode = statementNode.SelectSingleNode(xmlExpressionList);
+            int expCall = 0;
+            for (int i = 0; i < expressionListNode.ChildNodes.Count ; i++)
+            {
+                XmlNode currNode = expressionListNode.ChildNodes[i];
+                if (String.Equals(currNode.Name, "expression", StringComparison.OrdinalIgnoreCase))
+                {
+                    expCall++;
+                    VMCodeWriter.ExpressionNodeToVmCode(currNode);
+                }
+            }
+            XmlNode expressionNode = VMCodeWriter.GetExpressionNodeFromStatement(statementNode);
+            
             
             string xPath = "doStatement/subroutineCall";
             XmlNode callNode = statementNode.SelectSingleNode(xPath);
             string nodeText = callNode.InnerText;
+            string functionCallStr = nodeText .Substring(0,nodeText.IndexOf('(',0));
 
-            int idxOpenBracket = nodeText.IndexOf("(");
-            int idxEndBracket = nodeText.IndexOf(")");
-            string argsStr = nodeText.Substring(idxOpenBracket+1, idxEndBracket - idxOpenBracket-1);
-            string[] args = argsStr.Split(new char[] { ',' },StringSplitOptions.RemoveEmptyEntries);
-
-            string functionCallStr = nodeText.Substring(0, idxOpenBracket);
-            
-            int argCount = args.Length;
-
-
-            List<StackArgumentObject> argsList = new List<StackArgumentObject>();
-            for (int i = 0; i < args.Length; i++)
-			{
-                Segments segment;
-                int idx;
-                GetSegmentAndIndexByVariableName(args[i],out segment, out idx);
-                StackArgumentObject argObj = new StackArgumentObject(segment, idx);
-                argsList.Add(argObj);
-			}
-
-            VMCodeWriter.WriteCallFunction(functionCallStr, argsList);
+            VMCodeWriter.WriteCallFunction(functionCallStr, expCall);
 
             /*TODO: temp!! this is for void*/
             WritePopStatement(Segments.temp, 0);
-            
-
-
             
         }
 
@@ -555,6 +568,8 @@ namespace JackParser
         /// <param name="argumets">The argumets count passed to function</param>
         private static void WriteCallFunction(string className, string functionName, int argumentCount)
         {
+            FunctionType ftype = VMCodeWriter.GetFunctionTypeByName(functionName);
+            argumentCount += ftype == FunctionType.Method ? 1 : 0;
             VMCodeWriter.VmCode += String.Format("call {0}.{1} {2}", className, functionName, argumentCount) + Environment.NewLine;
         }
 
@@ -593,6 +608,8 @@ namespace JackParser
 
         private static void WriteFunctionDeclaration(string className, string name, int varsCount)
         {
+            VMCodeWriter._ifExpressionCount = 0;
+            VMCodeWriter._whileExpressionCount = 0;
             VMCodeWriter.VmCode += String.Format("function {0}.{1} {2}", VMCodeWriter.ClassName, name, varsCount) + Environment.NewLine;
         }
         /// <summary>
@@ -658,41 +675,48 @@ namespace JackParser
 
         private static void WriteExpressionVM(string currExpression)
         {
+            string cleanExpression = currExpression;
+            if (cleanExpression.StartsWith("(") && cleanExpression.EndsWith(")"))
+            {
+                cleanExpression = cleanExpression.Substring(1, cleanExpression.Length - 2);//stripping external brackets
+            }
+
             int expInt;
-            if (int.TryParse(currExpression, out expInt)) //expression is a number
+            if (int.TryParse(cleanExpression, out expInt)) //expression is a number
             {
                 VMCodeWriter.WritePushStetment(Segments.constant, expInt);
             }
             else
             {
-                var varDic = VMCodeWriter.GetDictionaryByVariableName(currExpression);
+                var varDic = VMCodeWriter.GetDictionaryByVariableName(cleanExpression);
                 bool isVariable = varDic != null;
                 if (isVariable)//expression is a variable
                 {
-                    VMCodeWriter.WritePushStetment(currExpression);
+                    VMCodeWriter.WritePushStetment(cleanExpression);
                 }
-                else if (Regex.IsMatch(currExpression, "^[a-zA-Z_][.?a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
+                else if (Regex.IsMatch(cleanExpression, "^[a-zA-Z_][.?a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
                 {
-                    bool isFunctionComposition = currExpression.Split(new String[]{"("},StringSplitOptions.RemoveEmptyEntries).Length > 1;
+                    bool isFunctionComposition = cleanExpression.Split(new String[]{"("},StringSplitOptions.RemoveEmptyEntries).Length > 2;
                     if (isFunctionComposition )
                     {
                         ////more than 1 function
-                        VMCodeWriter.WriteComment(currExpression);
+                        VMCodeWriter.WriteComment(cleanExpression);
 
                         int openBrackIdx;//= currExpression.IndexOf("(");
                         int closeBrackIdx;//= currExpression.IndexOf(")");
                         int stratPoint = 0;
-                        VMCodeWriter.GetInternalFunctionIndexes(currExpression, ref stratPoint, out openBrackIdx, out closeBrackIdx);
+                        VMCodeWriter.GetInternalFunctionIndexes(cleanExpression, stratPoint, out openBrackIdx, out closeBrackIdx);
 
-                        int startIndex = stratPoint + 1;
-                        int length = currExpression.Length - stratPoint - (closeBrackIdx - openBrackIdx);
-                        //int length = currExpression.Length - 1 - (closeBrackIdx - openBrackIdx);
+                        int startIndex = openBrackIdx+1;
+                        int length =  (closeBrackIdx - openBrackIdx)-2;
+
+                        string subExpressionsStr = cleanExpression.Substring(startIndex,length);
 
 
-
+                        var splittedExpressions = VMCodeWriter.GetSubExpressions(subExpressionsStr);
                         List<string> expressions =
-                            currExpression.Substring(startIndex, length).Split(new char[]{
-                       ','}, StringSplitOptions.RemoveEmptyEntries).ToList();
+                            cleanExpression.Substring(startIndex, length).Split(new char[]{','}, 
+                            StringSplitOptions.RemoveEmptyEntries).ToList();
                         //writing parameter expressions
                         for (int i = 0; i < expressions.Count; i++)
                         {
@@ -700,18 +724,26 @@ namespace JackParser
                             VMCodeWriter.WriteExpressionVM(expressions[i]);
                         }
 
-                        string functionName = currExpression.Substring(0, openBrackIdx);
+                        string functionName = cleanExpression.Substring(0, openBrackIdx);
                         VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
                     }
                     else
                     {
                         //single function
-                        VMCodeWriter.WriteComment(currExpression);
-                        int openBrackIdx = currExpression.IndexOf("(");
-                        int closeBrackIdx = currExpression.IndexOf("(");
+                        VMCodeWriter.WriteComment(cleanExpression);
+                        
+                        int openBrackIdx = cleanExpression.IndexOf("(");
+                        int closeBrackIdx = cleanExpression.IndexOf("(");
                         List<string> expressions =
-                            currExpression.Substring(openBrackIdx + 1, currExpression.Length - 2 - closeBrackIdx).Split(new char[]{
+                            cleanExpression.Substring(openBrackIdx + 1, cleanExpression.Length - 2 - closeBrackIdx).Split(new char[]{
                        ','}, StringSplitOptions.RemoveEmptyEntries).ToList();
+
+                        string fName = cleanExpression.Substring(0,openBrackIdx);
+                        FunctionType fType = VMCodeWriter.GetFunctionTypeByName(fName);
+                        if (fType == FunctionType.Method)
+                        {
+                            VMCodeWriter.WritePushStetment(Segments.pointer,0);
+                        }
                         //writing parameter expressions
                         for (int i = 0; i < expressions.Count; i++)
                         {
@@ -719,26 +751,26 @@ namespace JackParser
                             VMCodeWriter.WriteExpressionVM(expressions[i]);
                         }
 
-                        string functionName = currExpression.Substring(0, openBrackIdx);
+                        string functionName = cleanExpression.Substring(0, openBrackIdx);
                         VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
                     }
                    
                 }
-                else if (currExpression.Any(c => SymbolClassifications._allOparations.Contains(c.ToString())))
+                else if (cleanExpression.Any(c => SymbolClassifications._allOparations.Contains(c.ToString())))
                 {
                     //expression is in form of (exp1 OP exp2) OR (UNARYOP exp)
 
                     
-                    var splittedExpressions = VMCodeWriter.GetSubExpressions(currExpression);
+                    var splittedExpressions = VMCodeWriter.GetSubExpressions(cleanExpression);
 
 
                     bool isUnaric = 
                         splittedExpressions.Count == 1 && SymbolClassifications._unariOparations.Contains(splittedExpressions[0][0].ToString());
                     if (isUnaric)//(UNARYOP exp)
                     {
-                        string exp = currExpression.Substring(1, currExpression.Length - 1);
+                        string exp = cleanExpression.Substring(1, cleanExpression.Length - 1);
                         VMCodeWriter.WriteExpressionVM(exp);
-                        string @operator = currExpression[0].ToString();
+                        string @operator = cleanExpression[0].ToString();
                         VMCodeWriter.WriteUnaryOperation(@operator, String.Empty);
                     }
                     else // (exp1 OP exp2)
@@ -746,7 +778,7 @@ namespace JackParser
                         string exp1 = splittedExpressions[0];
                         if (exp1.StartsWith("("))
                         {
-                            exp1 = exp1.Substring(0, exp1.Length - 2);//stripping external brackets
+                            exp1 = exp1.Substring(1, exp1.Length - 2);//stripping external brackets
                         }
 
                         string exp2 = splittedExpressions[2];
@@ -758,54 +790,82 @@ namespace JackParser
                         VMCodeWriter.WriteBinaryOperation(@operator, String.Empty);
                     }
                 }
-                else if (currExpression == "true")
+                else if (cleanExpression == "true")
                 {
                     VMCodeWriter.WritePushStetment(Segments.constant, 0);
                     VMCodeWriter.VmCode += "not" + Environment.NewLine;
-                }             
-                else
-                {
-                    throw new Exception("Failed to recognize expression structure: " + currExpression);
                 }
+                else if (cleanExpression == "false")
+                {
+                    VMCodeWriter.WritePushStetment(Segments.constant, 0);
+                }
+                else //if (cleanExpression.StartsWith("\"") && cleanExpression.EndsWith("\""))
+                {
+                    //TODO: mak a better job telling it is a string constant...
+                    VMCodeWriter.WriteStringConstant(cleanExpression);
+                }              
+                //else
+                //{
+                //    throw new Exception("Failed to recognize expression structure: " + cleanExpression);
+                //}
             }
         }
 
-        private static void GetInternalFunctionIndexes(string str, ref int startIndex, out int openBrackIdx, out int closeBrackIdx)
+        private static void WriteStringConstant(string str)
         {
-
-            openBrackIdx = str.IndexOf("(", startIndex + 1);
-            char[] reverse = str.ToCharArray();
-            Array.Reverse(reverse);
-            closeBrackIdx = reverse.IndexOf(')', startIndex + 1);
-
-            int nextOpenBrackIdx = str.IndexOf("(", openBrackIdx + 1);
-            int nextCloseBrackIdx = str.IndexOf(")", openBrackIdx + 1);
-            if (nextOpenBrackIdx < nextCloseBrackIdx && nextOpenBrackIdx >=0)
+            WritePushStetment(Segments.constant, str.Length);
+            WriteCallFunction("String.new", 1);
+            for (int i = 0; i < str.Length; i++)
             {
-                startIndex = nextOpenBrackIdx ;
-                GetInternalFunctionIndexes(str, ref startIndex, out openBrackIdx, out closeBrackIdx);
+                int index = (int)str[i];
+                WritePushStetment(Segments.constant, index);
+                WriteCallFunction("String.appendChar", 2);
+                
+            }
+        }
+
+        private static FunctionType GetFunctionTypeByName(string fName)
+        {
+            FunctionType fType = FunctionType.Function;
+            if(VMCodeWriter._functionTypeByName.ContainsKey(fName) )
+            {
+                fType= VMCodeWriter._functionTypeByName[fName];
             }
             else
             {
-                while (closeBrackIdx < openBrackIdx)
-                {
-
-                    openBrackIdx = str.IndexOf(")", openBrackIdx + 1);
-                    closeBrackIdx = str.IndexOf("(", closeBrackIdx + 1);
-
-                    //Break if there is no any opened bracket
-                    //index before closing index
-                    if (closeBrackIdx == -1)
-                    {
-                        break;
-                    }
-
-
-                }
+                FunctionTypeEventArgs e= new FunctionTypeEventArgs(fName);
+                onFuncTypeInfoRequired(null,e);
+                fType = e.functionType;
+                VMCodeWriter._functionTypeByName[fName] = fType;
             }
+            return fType;
+        }
+
+        private static void GetInternalFunctionIndexes(string str,int startIndex,  out int openBrackIdx, out int closeBrackIdx)
+        {
             
-            char[] separators = new char[] { '(', ')', '=', ',' };
-            string[] arr = str.Split(separators, StringSplitOptions.RemoveEmptyEntries).Where(x => x.Trim().Length != 0).Select(x => x.Trim()).ToArray();
+            openBrackIdx = str.IndexOf("(", startIndex );
+            closeBrackIdx =-1;
+            int counter = 1;
+            int idx = openBrackIdx + 1;
+            while (counter != 0 && idx < str.Length)
+            {
+                if (str[idx] == '(')
+                {
+                    counter++;
+                }
+                if (str[idx] == ')')
+                {
+                    counter--;
+                }
+                idx++;
+            }
+            closeBrackIdx = idx;
+            int length = closeBrackIdx-openBrackIdx-2;
+            string s = str.Substring(openBrackIdx+1,length);
+            
+            //char[] separators = new char[] { '(', ')', '=', ',' };
+            //string[] arr = str.Split(separators, StringSplitOptions.RemoveEmptyEntries).Where(x => x.Trim().Length != 0).Select(x => x.Trim()).ToArray();
             
 
            // Console.WriteLine("Required index is {0}", openBrackIdx);
@@ -822,12 +882,17 @@ namespace JackParser
         {
             List<string> splittedExpressions = null;
             //string firstOperand = currExpression.Substring;
+
+            List<string> splitters = new List<string>(SymbolClassifications._oparations);
+            splitters.Add(",");
             var emuStrings =
-            currExpression.Select<char, string>(c => SymbolClassifications._oparations.Contains(c.ToString()) ? "@" + c + "@" : c.ToString());
+            currExpression.Select<char, string>(c => splitters.Contains(c.ToString()) ? "@" + c + "@" : c.ToString());
             string revisedExpression = String.Join(String.Empty, emuStrings);
             splittedExpressions = revisedExpression.Split(new string[] { "@" }, StringSplitOptions.RemoveEmptyEntries).ToList();
             splittedExpressions = splittedExpressions.Select(s => s.Replace("@", String.Empty)).ToList();
 
+
+            splittedExpressions.RemoveAll(s => s == ",");
             //keep brackets in tackt
             for (int i = 0; i < splittedExpressions.Count - 1; i++)
             {
@@ -835,7 +900,7 @@ namespace JackParser
                 if (splittedExpressions[i].Contains("("))
                 {
                     bCount++;
-                    bool closed = false;
+                    bool closed = IsLegalBracketExpression(splittedExpressions[i]) ;
                     while (!closed)
                     {
                         if (splittedExpressions[i + 1].Contains("("))
@@ -884,6 +949,36 @@ namespace JackParser
 
 
             return splittedExpressions;
+        }
+
+        private static bool IsLegalBracketExpression(string str)
+        {
+            Stack<char> stack = new Stack<char>();
+            foreach (char c in str)
+            {
+                try
+                {
+
+
+                    if (c == '(')
+                    {
+                        stack.Push(c);
+                    }
+                    else if (c == ')')
+                    {
+                        stack.Pop();
+
+                    }
+                }
+                catch (Exception)
+                {
+
+                    return false;
+                }
+              
+            }
+            // check that every opening bracket was closed
+            return stack.Count == 0;
         }
 
 
@@ -1082,6 +1177,54 @@ namespace JackParser
         {
             VMCodeWriter._arguments.Add(varname, VMCodeWriter._arguments.Count);
         }
+
+        /// <summary>
+        /// Adds if statement.
+        /// </summary>
+        /// <param name="statementNode">The node containg statement</param>        
+        internal static void AddIfStatement(XmlNode statementNode)
+        {
+            XmlNode expression = VMCodeWriter.GetExpressionNodeFromStatement(statementNode);
+            VMCodeWriter.ExpressionNodeToVmCode(expression);
+            //VMCodeWriter.VmCode += "eq" + Environment.NewLine;
+
+            VMCodeWriter.VmCode += "if-goto IF_TRUE" + _ifExpressionCount + Environment.NewLine;
+            VMCodeWriter.VmCode += "goto IF_FALSE" + _ifExpressionCount + Environment.NewLine;
+            VMCodeWriter.VmCode += "label IF_TRUE" + _ifExpressionCount + Environment.NewLine;
+
+            //VMCodeWriter.VmCode += "if-goto IF_TRUE" + _ifExpressionCount + Environment.NewLine;
+            _IfOpeners.Push(_ifExpressionCount);
+            _ifExpressionCount++;
+            //throw new NotImplementedException();
+        }
+
+        internal static void AddElseStatement()
+        {
+            int ifCounter = _IfOpeners.Peek();
+            VMCodeWriter.VmCode += "goto IF_END" + ifCounter + Environment.NewLine;
+            VMCodeWriter.VmCode += "label IF_FALSE" + ifCounter + Environment.NewLine;
+
+        }
+
+        internal static void CloseIfStatement(bool hasElse)
+        {
+            int ifCounter = _IfOpeners.Pop(); 
+            if (hasElse)
+            {
+                   
+                VMCodeWriter.VmCode += "label IF_END" + ifCounter + Environment.NewLine;
+
+            }
+            else
+            {
+                VMCodeWriter.VmCode += "label IF_FALSE" + ifCounter + Environment.NewLine;
+            }
+
+
+        }
+
+
+        
     }
 
 
@@ -1123,6 +1266,16 @@ namespace JackParser
     {
         public string vm_code;
 
+    }
+
+    public class FunctionTypeEventArgs : EventArgs
+    {
+        public string functionName;
+        public FunctionType functionType;
+        public FunctionTypeEventArgs(string name)
+        {
+            this.functionName = name;
+        }
     }
 
     class GotLocalVariablesCount : EventArgs

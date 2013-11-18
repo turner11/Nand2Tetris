@@ -21,18 +21,20 @@ namespace JackParser
         static int _TokenRowNumber = 1;
         static string _DEBUG_xmlString;
         static int _DEBUG_xmlRowNumber = 0;
-
+        static XmlDocument tokens = new XmlDocument();
 
 
         #region Internal Methods
 
         public static List<Exception> Start(string folderName)
         {
+            VMCodeWriter.onFuncTypeInfoRequired +=VMCodeWriter_onFuncTypeInfoRequired;
             List<Exception> exList = new List<Exception>();
             var jackFiles = Directory.GetFiles(folderName, "*T.xml");
             foreach (string fileName in jackFiles)
             {
-                XmlDocument tokens = new XmlDocument();
+              
+               
                 try
                 {
                     tokens.Load(fileName);
@@ -45,10 +47,12 @@ namespace JackParser
                     continue;
                 }
 
+               
+               
                 try
                 {
                     string xmlStr = JackParser.GetCleanJackXmlStringFromTokens(tokens);
-                    
+
                     string[] tmp = fileName.Split('.');
                     string fName = tmp[0];
                     if (fName.EndsWith("T"))
@@ -65,11 +69,40 @@ namespace JackParser
                     exList.Add(e);
                     continue;
                 }
+                finally
+                {
+                }
                 
                 
             }
             return exList;
 
+        }
+
+        private static void VMCodeWriter_onFuncTypeInfoRequired(object sender, FunctionTypeEventArgs e)
+        {
+            e.functionType = GetFunctionType(e.functionName,tokens);
+        }
+
+        private static FunctionType GetFunctionType(string name, XmlDocument tokensDoc)
+        {
+            XmlNodeList nodes = tokensDoc.FirstChild.SelectNodes(String.Format("identifier[text()='{0}']",name));
+            FunctionType[] ftypes = Enum.GetValues(typeof(FunctionType)).OfType<FunctionType>().ToArray();
+            foreach (XmlNode node in nodes)
+            {
+                XmlNode modifierNode = node.PreviousSibling.PreviousSibling;
+                string modifier = modifierNode.InnerText;
+                foreach (FunctionType currType in ftypes)
+                {
+                    if (modifier.Equals(currType.ToString(),StringComparison.OrdinalIgnoreCase))
+                    {
+                        return currType;
+                    }
+                }
+                    
+
+            }
+            return  FunctionType.Function;
         }
         /// <summary>
         /// Extension to XmlDocument. returns the document as a string
@@ -1064,6 +1097,8 @@ namespace JackParser
 
             //'{' Statements '}'
             JackParser.AppendStatementsInCurlyBrackets(rootWhileNode, tokensDoc);
+
+            VMCodeWriter.CloseWhileStatement();
         }
 
         private static void AppendIfStatement(XmlNode parentNode, XmlDocument tokensDoc)
@@ -1086,19 +1121,25 @@ namespace JackParser
             //'{' Statements '}'
             JackParser.AppendStatementsInCurlyBrackets(rootIfNode, tokensDoc);
 
+           
+
 
             /*else*/
             XmlNode elseToken = JackParser.GetNextToken(tokensDoc);
-            if (elseToken.InnerText.Trim() == "else")
+            bool hasElse = elseToken.InnerText.Trim() == "else";
+            if (hasElse)
             {
                 /*else*/
                 JackParser.AddToken(rootIfNode, elseToken, "else", TokenTypes.keyword, null);
                 //token was handled, remove it
                 JackParser.RemoveFirstToken(tokensDoc);
 
+                VMCodeWriter.AddElseStatement();
                 //'{' Statements '}'
                 JackParser.AppendStatementsInCurlyBrackets(rootIfNode, tokensDoc);
+                //VMCodeWriter.CloseElseStatement(parentNode);
             }
+            VMCodeWriter.CloseIfStatement(hasElse);
         }
 
         /// <summary>
