@@ -120,8 +120,8 @@ namespace JackParser
             /*This is for easier debugging...*/
             //e.vm_code.ToString();
             //if (e.vm_code.Trim().Contains("call CircleMaker.Memory.deAlloc 1"))                
-            if (e.vm_code.Trim().EndsWith("push constant 2"))
-            if (_codeLines >370)            
+            if (e.vm_code.Trim().EndsWith("push constant 0"))
+            if (_codeLines >94)            
             {
                 /*this is a progrematic breakpoint*/
                 System.Diagnostics.Debugger.Break();
@@ -271,7 +271,7 @@ namespace JackParser
             else if(Boolean.TryParse(varName,out boolVar ))
             {
                 segment = Segments.constant;
-                index = boolVar?0:-1; //check for both true and false
+                index = boolVar?0:-1; //TODO:check for both true and false
             }
             else
             {
@@ -465,7 +465,7 @@ namespace JackParser
         /// <param name="arg">The argument to push from.</param>
         private static void WritePushStetment(StackArgumentObject arg)
         {
-            VMCodeWriter.VmCode += String.Format("push {0} {1}", arg.segment, arg.index) + Environment.NewLine;
+            VMCodeWriter.VmCode += String.Format("push {0} {1}", arg.segment, arg.index) + Environment.NewLine;            
         }
         /// <summary>
         /// Writes the VM push stetment.
@@ -480,6 +480,11 @@ namespace JackParser
             System.Diagnostics.Debug.WriteLine(String.Format(">>>> Pusing '{0}': (semgment {1}; Idx {2})",varName,segment,index));
 
             VMCodeWriter.WritePushStetment(segment, index);
+            if (varName == "true")/*speacial case*/
+            {
+                VMCodeWriter.VmCode += "not" + Environment.NewLine;
+            }
+            
         }
 
         /// <summary>
@@ -652,164 +657,127 @@ namespace JackParser
         /// <summary>
         /// converts an Expressions node to vm code.
         /// </summary>
-        /// <param name="expressionNode">The expression node.</param>
+        /// <param name="expressionClone">The expression node.</param>
         /// <returns>the expression VM code</returns>
         private static void ExpressionNodeToVmCode(XmlNode expressionNode)
         {
-            if (expressionNode == null)
+            XmlNode expressionClone = expressionNode.CloneNode(true);
+            if (expressionClone == null)
             {
                 return;
             }
-            List<string> tokens = VMCodeWriter.GetAllExpressionTokens(expressionNode);
-            //VMCodeWriter.ExpressionTokensToVmCode(tokens);
+            string content = expressionClone.InnerText;
+            XmlNodeList nodes = expressionClone.ChildNodes;
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                XmlNode currNode = nodes[i];
+                string currNodeName = currNode.Name ;
+                
+                if (currNodeName ==  "term")
+                {
+                    VMCodeWriter.TermNodeToVmCode(currNode);
+                }
+                else if (currNodeName == "op")
+                {
+                    string @operator  = currNode.InnerText;
+                    XmlNode nextTermNode = nodes[++i];//handle it first, and advance the index
+                    VMCodeWriter.TermNodeToVmCode(nextTermNode);
+                    VMCodeWriter.WriteBinaryOperation(@operator);
+                }
+                else
+                {
+                    1.ToString();
+                }
+            }
 
-            //return;
-            //splittedExpressions.ToString();
-            string retString = String.Empty;
-
-            string currString = expressionNode.InnerText;
-            //string rp = ReversePolishHandler.ToReversePolish(tokens);
-            WriteExpressionVM(currString);
 
         }
 
-        private static void WriteExpressionVM(string currExpression)
+        private static void TermNodeToVmCode(XmlNode termNode)
         {
-            string cleanExpression = currExpression;
-            if (cleanExpression.StartsWith("(") && cleanExpression.EndsWith(")"))
+            string currNodeName = termNode.Name;
+            if (currNodeName != "term")
             {
-                cleanExpression = cleanExpression.Substring(1, cleanExpression.Length - 2);//stripping external brackets
+                throw new Exception("expected node to be of term type");
             }
-
-            int expInt;
-            if (int.TryParse(cleanExpression, out expInt)) //expression is a number
+            XmlNodeList currNodes = termNode.ChildNodes;
+            for (int j = 0; j < currNodes.Count; j++)
             {
-                VMCodeWriter.WritePushStetment(Segments.constant, expInt);
+                XmlNode currTermChild = currNodes[j];
+                string currContent = currTermChild.InnerText;
+                switch (currTermChild.Name)
+                {
+                    case "integerConstant":
+
+                        int value;
+                        if (!int.TryParse(currContent, out value))
+                        {
+                            throw new Exception("failed to parse integer constant expression: " + currContent);
+                        }
+                        VMCodeWriter.WritePushStetment(Segments.constant, value);
+                        break;
+                    case "keywordConstant":
+                    case "identifier":
+
+                        VMCodeWriter.WritePushStetment(currContent);
+                        break;
+                    case "exp op exp":
+                        throw new Exception();
+                        break;
+                    case "unaryOp":
+                        VMCodeWriter.WriteUnaryOperation(currContent);
+                        break;
+                    case "subroutineCall":
+                        VMCodeWriter.WriteCallFunction(currTermChild);
+                        break;
+                    case "term":
+                        VMCodeWriter.HandleTermExpression(currTermChild);
+                        break;
+                    default:
+                        throw new Exception("Failed to determin expression type: " + currTermChild.Name);
+                }
+            }
+        }
+
+        private static void HandleTermExpression(XmlNode currTermChild)
+        {
+            XmlNode expression = currTermChild.SelectSingleNode("expression");
+            if (expression == null)
+            {
+                throw new Exception("failed to get expression from sub term");
             }
             else
             {
-                var varDic = VMCodeWriter.GetDictionaryByVariableName(cleanExpression);
-                bool isVariable = varDic != null;
-                if (isVariable)//expression is a variable
-                {
-                    VMCodeWriter.WritePushStetment(cleanExpression);
-                }
-                else if (Regex.IsMatch(cleanExpression, "^[a-zA-Z_][.?a-z*A-Z*_*0-9*]*[(]", RegexOptions.None))//function call
-                {
-                    bool isFunctionComposition = cleanExpression.Split(new String[]{"("},StringSplitOptions.RemoveEmptyEntries).Length > 2;
-                    if (isFunctionComposition )
-                    {
-                        ////more than 1 function
-                        VMCodeWriter.WriteComment(cleanExpression);
-
-                        int openBrackIdx;//= currExpression.IndexOf("(");
-                        int closeBrackIdx;//= currExpression.IndexOf(")");
-                        int stratPoint = 0;
-                        VMCodeWriter.GetInternalFunctionIndexes(cleanExpression, stratPoint, out openBrackIdx, out closeBrackIdx);
-
-                        int startIndex = openBrackIdx+1;
-                        int length =  (closeBrackIdx - openBrackIdx)-2;
-
-                        string subExpressionsStr = cleanExpression.Substring(startIndex,length);
-
-
-                        var splittedExpressions = VMCodeWriter.GetSubExpressions(subExpressionsStr);
-                        List<string> expressions =
-                            cleanExpression.Substring(startIndex, length).Split(new char[]{','}, 
-                            StringSplitOptions.RemoveEmptyEntries).ToList();
-                        //writing parameter expressions
-                        for (int i = 0; i < expressions.Count; i++)
-                        {
-                            //recursion
-                            VMCodeWriter.WriteExpressionVM(expressions[i]);
-                        }
-
-                        string functionName = cleanExpression.Substring(0, openBrackIdx);
-                        VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
-                    }
-                    else
-                    {
-                        //single function
-                        VMCodeWriter.WriteComment(cleanExpression);
-                        
-                        int openBrackIdx = cleanExpression.IndexOf("(");
-                        int closeBrackIdx = cleanExpression.IndexOf("(");
-                        List<string> expressions =
-                            cleanExpression.Substring(openBrackIdx + 1, cleanExpression.Length - 2 - closeBrackIdx).Split(new char[]{
-                       ','}, StringSplitOptions.RemoveEmptyEntries).ToList();
-
-                        string fName = cleanExpression.Substring(0,openBrackIdx);
-                        FunctionType fType = VMCodeWriter.GetFunctionTypeByName(fName);
-                        if (fType == FunctionType.Method)
-                        {
-                            VMCodeWriter.WritePushStetment(Segments.pointer,0);
-                        }
-                        //writing parameter expressions
-                        for (int i = 0; i < expressions.Count; i++)
-                        {
-                            //recursion
-                            VMCodeWriter.WriteExpressionVM(expressions[i]);
-                        }
-
-                        string functionName = cleanExpression.Substring(0, openBrackIdx);
-                        VMCodeWriter.WriteCallFunction(functionName, expressions.Count);
-                    }
-                   
-                }
-                else if (cleanExpression.Any(c => SymbolClassifications._allOparations.Contains(c.ToString())))
-                {
-                    //expression is in form of (exp1 OP exp2) OR (UNARYOP exp)
-
-                    
-                    var splittedExpressions = VMCodeWriter.GetSubExpressions(cleanExpression);
-
-
-                    bool isUnaric = 
-                        splittedExpressions.Count == 1 && SymbolClassifications._unariOparations.Contains(splittedExpressions[0][0].ToString());
-                    if (isUnaric)//(UNARYOP exp)
-                    {
-                        string exp = cleanExpression.Substring(1, cleanExpression.Length - 1);
-                        VMCodeWriter.WriteExpressionVM(exp);
-                        string @operator = cleanExpression[0].ToString();
-                        VMCodeWriter.WriteUnaryOperation(@operator, String.Empty);
-                    }
-                    else // (exp1 OP exp2)
-                    {
-                        string exp1 = splittedExpressions[0];
-                        if (exp1.StartsWith("("))
-                        {
-                            exp1 = exp1.Substring(1, exp1.Length - 2);//stripping external brackets
-                        }
-
-                        string exp2 = splittedExpressions[2];
-                        string @operator = splittedExpressions[1];
-
-                        VMCodeWriter.WriteExpressionVM(exp1);
-                        VMCodeWriter.WriteExpressionVM(exp2);
-
-                        VMCodeWriter.WriteBinaryOperation(@operator, String.Empty);
-                    }
-                }
-                else if (cleanExpression == "true")
-                {
-                    VMCodeWriter.WritePushStetment(Segments.constant, 0);
-                    VMCodeWriter.VmCode += "not" + Environment.NewLine;
-                }
-                else if (cleanExpression == "false")
-                {
-                    VMCodeWriter.WritePushStetment(Segments.constant, 0);
-                }
-                else //if (cleanExpression.StartsWith("\"") && cleanExpression.EndsWith("\""))
-                {
-                    //TODO: mak a better job telling it is a string constant...
-                    VMCodeWriter.WriteStringConstant(cleanExpression);
-                }              
-                //else
-                //{
-                //    throw new Exception("Failed to recognize expression structure: " + cleanExpression);
-                //}
+                VMCodeWriter.ExpressionNodeToVmCode(expression);
             }
         }
+
+        private static void WriteCallFunction(XmlNode subroutineNode)
+        {
+            string xPath = "expressionList";
+            XmlNode expressionList = subroutineNode.SelectSingleNode(xPath);
+            if (expressionList != null)
+            {
+                for (int i = 0; i < expressionList.ChildNodes.Count; i++)
+                {
+                    XmlNode expressionNode = expressionList.ChildNodes[i];
+                    if (expressionNode.Name == "expression")
+                    {
+                        ExpressionNodeToVmCode(expressionNode);
+                    }
+                }
+            }
+
+            string text = subroutineNode.InnerText;
+            int openBrackIdx = text.IndexOf("(");
+
+            string fName = text.Substring(0, openBrackIdx);
+
+
+            VMCodeWriter.WriteCallFunction(fName, expressionList.ChildNodes.Count);
+        }
+
+      
 
         private static void WriteStringConstant(string str)
         {
@@ -901,7 +869,7 @@ namespace JackParser
                 {
                     bCount++;
                     bool closed = IsLegalBracketExpression(splittedExpressions[i]) ;
-                    while (!closed)
+                    while (!closed && i < splittedExpressions.Count-1)
                     {
                         if (splittedExpressions[i + 1].Contains("("))
                             bCount++;
@@ -985,8 +953,9 @@ namespace JackParser
 
 
 
-        private static void WriteBinaryOperation(string @operator, string destinationVarName)
+        private static void WriteBinaryOperation(string @operator)
         {
+            
             /*speacial cases*/
             if (@operator == "*")
             {
@@ -996,6 +965,10 @@ namespace JackParser
             else if (@operator == "/")
             {
                 VMCodeWriter.WriteCallFunction("Math", "divide", 2);
+            }
+            else if (@operator == "#")
+            {
+                VMCodeWriter.WriteCallFunction("Math", "sqrt", 2);
             }
             else //Actually an OS operator
             {
@@ -1014,10 +987,10 @@ namespace JackParser
                 string operation = operationsNames[@operator];
                 VMCodeWriter.VmCode += operation + Environment.NewLine;
 
-                if (!String.IsNullOrWhiteSpace(destinationVarName))
-                {
-                    VMCodeWriter.WritePopStatement(destinationVarName);
-                }
+                //if (!String.IsNullOrWhiteSpace(destinationVarName))
+                //{
+                //    VMCodeWriter.WritePopStatement(destinationVarName);
+                //}
             }
 
 
@@ -1025,7 +998,7 @@ namespace JackParser
 
         }
 
-        private static void WriteUnaryOperation(string @operator, string destinationVarName)
+        private static void WriteUnaryOperation(string @operator)
         {
             Dictionary<string, string> operationsNames = new Dictionary<string, string>()
             {
@@ -1036,11 +1009,7 @@ namespace JackParser
 
             string operation = operationsNames[@operator];
             VMCodeWriter.VmCode += operation + Environment.NewLine;
-
-            if (!String.IsNullOrWhiteSpace(destinationVarName))
-            {
-                VMCodeWriter.WritePopStatement(destinationVarName);
-            }
+            
         }
 
         private static void ExpressionTokensToVmCode(List<string> tokens)
