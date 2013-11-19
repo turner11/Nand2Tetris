@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.IO;
+using System.Xml;
 
 namespace Ex2
 {
@@ -17,9 +18,10 @@ namespace Ex2
             this.workingDir = workingDir;
         }
 
-        public List<Exception> start()
+        public List<Exception> start(out List<Tuple<string, XmlDocument>> tokenFiles)
         {
             var jackFiles = Directory.GetFiles(workingDir, "*.jack");
+            tokenFiles = new List<Tuple<string, XmlDocument>>();
 
             List<Exception> exList = new List<Exception>();
             foreach (string fileName in jackFiles)
@@ -30,9 +32,14 @@ namespace Ex2
                     str = removeComments(str);
                     str = recursiveTokenize(str);
                     str = "<tokens>" + Environment.NewLine + str + Environment.NewLine + "</tokens>";
-                    string[] tmp = fileName.Split('.');
+
+                    XmlDocument tokens = new XmlDocument();
+                    tokens.LoadXml(str);
+                    Tuple<string,XmlDocument> tple= new Tuple<string,XmlDocument>(fileName,tokens);
+                    tokenFiles.Add(tple);
+                    /*string[] tmp = fileName.Split('.');
                     string newFileName = tmp[0] + "T.xml";
-                    System.IO.File.WriteAllText(newFileName, str);
+                    System.IO.File.WriteAllText(newFileName, str);*/
                 }
                 catch (Exception ex)
                 {

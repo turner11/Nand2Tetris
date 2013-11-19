@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Xml;
 
 
 namespace Ex2
@@ -40,10 +41,23 @@ namespace Ex2
             List<Exception> parserError = new List<Exception>(); 
             try
             {
-                tokensError = tokenizer.start();
-                parserError = JackParser.JackParser.Start(folder);
+                List<Tuple<string,XmlDocument>> tokenFiles;
+                tokensError = tokenizer.start(out  tokenFiles);
 
-                string code = JackParser.VMCodeWriter.VmCode;
+                List<Tuple<string, string>> vmFiles;
+                parserError = JackParser.JackParser.Start(tokenFiles, out vmFiles);
+
+               
+
+                foreach (Tuple<string, string> vmTuple in vmFiles)
+                {
+                    string[] tmp = vmTuple.Item1.Split('.');
+                    string fName = tmp[0];
+                   
+                    fName = fName + ".vm";
+                    System.IO.File.WriteAllText(fName, vmTuple.Item2);
+                }
+                
                 
             }
             catch (Exception ex)
@@ -64,16 +78,19 @@ namespace Ex2
             if (errorList.Count > 0)
             {
                 Console.WriteLine(msg);
+                Console.WriteLine("Total of "+ errorList.Count+" errors");
                 Console.WriteLine(Environment.NewLine);
                 foreach (Exception ex in errorList)
                 {
-                    Console.WriteLine(Environment.NewLine);
-                    Console.WriteLine(ex.Message);
-                    Console.WriteLine(Environment.NewLine);
-                    Console.WriteLine(ex.ToString());
-                    Console.WriteLine(Environment.NewLine);
+                    
+                    Console.WriteLine(">> "+ex.Message);
+                    //Console.WriteLine(Environment.NewLine);
+                    //Console.WriteLine(ex.ToString());
+                    //Console.WriteLine(Environment.NewLine);
 
                 }
+                Console.WriteLine(Environment.NewLine);
+               
             }
             
             

@@ -26,23 +26,25 @@ namespace JackParser
 
         #region Internal Methods
 
-        public static List<Exception> Start(string folderName)
+        public static List<Exception> Start(List<Tuple<string,XmlDocument>> tokenFiles, out List<Tuple<string,string>> vmCode)
         {
+            vmCode = new List<Tuple<string, string>>();
             VMCodeWriter.onFuncTypeInfoRequired +=VMCodeWriter_onFuncTypeInfoRequired;
             List<Exception> exList = new List<Exception>();
-            var jackFiles = Directory.GetFiles(folderName, "*T.xml");
-            foreach (string fileName in jackFiles)
+            //var jackFiles = Directory.GetFiles(folderName, "*T.xml");
+            foreach (Tuple<string,XmlDocument> tokensTuple  in tokenFiles)
             {
-              
+                XmlDocument currTokens = tokensTuple.Item2;
+                string fileName = tokensTuple.Item1;
                
                 try
                 {
-                    tokens.Load(fileName);
+                    JackParser.tokens = currTokens;
                 }
                 catch (Exception ex)
                 {
 
-                    Exception e = new Exception("Got bad tokens document: "+ fileName,ex);
+                    Exception e = new Exception("Got bad tokens document"/*+ fileName*/,ex);
                     exList.Add(e);
                     continue;
                 }
@@ -51,21 +53,25 @@ namespace JackParser
                
                 try
                 {
-                    string xmlStr = JackParser.GetCleanJackXmlStringFromTokens(tokens);
+                    string xmlStr = JackParser.GetCleanJackXmlStringFromTokens(currTokens);
+                    Tuple<string, string> vmTuple = new Tuple<string, string>(fileName, VMCodeWriter.VmCode);
+                    vmCode.Add(vmTuple);
+                    VMCodeWriter.Init();
 
-                    string[] tmp = fileName.Split('.');
+
+                    /*string[] tmp = fileName.Split('.');
                     string fName = tmp[0];
                     if (fName.EndsWith("T"))
                     {
                         fName = fName.Substring(0, fName.Length - 1);
                     }
                     fName = fName + ".xml";
-                    System.IO.File.WriteAllText(fName, xmlStr);
+                    System.IO.File.WriteAllText(fName, xmlStr);*/
                 }
                 catch (Exception ex)
                 {
 
-                    Exception e = new Exception("Failed to parse tokens file: " + fileName, ex);
+                    Exception e = new Exception("Failed to parse tokens file: "+ fileName, ex);
                     exList.Add(e);
                     continue;
                 }
@@ -434,6 +440,7 @@ namespace JackParser
             JackParser.AddToken(rootSubroutineBodyNode, closeBodyBracket, "}", TokenTypes.symbol, null);
             //token was handled, remove it
             JackParser.RemoveFirstToken(tokensDoc);
+            VMCodeWriter.FunctionEnd();
         }
 
         /// <summary>
