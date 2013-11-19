@@ -28,17 +28,20 @@ namespace JackParser
         static int _ifExpressionCount = 0;
         
 
-        static string _vmCode;
+        static string _vmCode = String.Empty;
         public static string VmCode
         {
             get { return _vmCode; }
             set
             {
+                
+                string delta = value.Substring(_vmCode.Length, value.Length - _vmCode.Length).Trim();
                 _vmCode = value ?? String.Empty;
                 if (VMCodeWriter.onVmCodeChanged != null)
                 {
                     VmCodeChangedArgs e = new VmCodeChangedArgs();
                     e.vm_code = _vmCode;
+                    e.delta = delta;
                     VMCodeWriter.onVmCodeChanged(null, e);
                 }
             }
@@ -120,10 +123,10 @@ namespace JackParser
             /*This is for easier debugging...*/
             //e.vm_code.ToString();
             //if (e.vm_code.Trim().Contains("call CircleMaker.Memory.deAlloc 1"))                
-            if (e.vm_code.Trim().EndsWith("push constant 0"))
-            if (_codeLines >94)            
+            //if (e.vm_code.Trim().EndsWith("push constant 0"))
+            if (_codeLines == 400)            
             {
-                /*this is a progrematic breakpoint*/
+                /*this is a progrematic breakpoint zzz*/
                 System.Diagnostics.Debugger.Break();
             }
         }
@@ -271,7 +274,7 @@ namespace JackParser
             else if(Boolean.TryParse(varName,out boolVar ))
             {
                 segment = Segments.constant;
-                index = boolVar?0:-1; //TODO:check for both true and false
+                index = 0;
             }
             else
             {
@@ -325,6 +328,17 @@ namespace JackParser
         {
             //<doStatement><keyword>do</keyword><subroutineCall><identifier>Memory</identifier><symbol>.</symbol><identifier>deAlloc</identifier><symbol>(</symbol><expressionList><expression><term><keywordConstant><keyword>this</keyword></keywordConstant></term></expression></expressionList><symbol>)</symbol></subroutineCall><symbol>;</symbol></doStatement>"
 
+            string xPath = "doStatement/subroutineCall";
+            XmlNode callNode = statementNode.SelectSingleNode(xPath);
+            string nodeText = callNode.InnerText;
+            string functionCallStr = nodeText.Substring(0, nodeText.IndexOf('(', 0));
+
+             FunctionType fType = VMCodeWriter.GetFunctionTypeByName(functionCallStr);
+             if (fType == FunctionType.Method)
+             {
+                 VMCodeWriter.WritePushStetment(Segments.pointer, 0);
+             }
+
             string xmlExpressionList = "doStatement/subroutineCall/expressionList";
             XmlNode expressionListNode = statementNode.SelectSingleNode(xmlExpressionList);
             int expCall = 0;
@@ -340,10 +354,7 @@ namespace JackParser
             XmlNode expressionNode = VMCodeWriter.GetExpressionNodeFromStatement(statementNode);
             
             
-            string xPath = "doStatement/subroutineCall";
-            XmlNode callNode = statementNode.SelectSingleNode(xPath);
-            string nodeText = callNode.InnerText;
-            string functionCallStr = nodeText .Substring(0,nodeText.IndexOf('(',0));
+           
 
             VMCodeWriter.WriteCallFunction(functionCallStr, expCall);
 
@@ -435,8 +446,8 @@ namespace JackParser
             {
                 /*Order matters!*/
                 VMCodeWriter._arguments,//must be first
-                VMCodeWriter._classVaraibles,
-                VMCodeWriter._localVariables,
+                VMCodeWriter._localVariables,//second
+                VMCodeWriter._classVaraibles,                
                 VMCodeWriter._staticVariables,
                 VMCodeWriter._that,
                 VMCodeWriter._this
@@ -725,6 +736,8 @@ namespace JackParser
                         throw new Exception();
                         break;
                     case "unaryOp":
+                         XmlNode nextNode = currNodes[++j];//handle it first, and advance the index
+                         VMCodeWriter.TermNodeToVmCode(nextNode);
                         VMCodeWriter.WriteUnaryOperation(currContent);
                         break;
                     case "subroutineCall":
@@ -732,6 +745,15 @@ namespace JackParser
                         break;
                     case "term":
                         VMCodeWriter.HandleTermExpression(currTermChild);
+                        break;
+                    case "symbol":
+                    //nothing to do
+                        break;
+                    case "expression":
+                        VMCodeWriter.ExpressionNodeToVmCode(currTermChild);
+                        break;
+                    case "stringConstant":
+                        VMCodeWriter.WriteStringConstant(currContent);
                         break;
                     default:
                         throw new Exception("Failed to determin expression type: " + currTermChild.Name);
@@ -756,6 +778,18 @@ namespace JackParser
         {
             string xPath = "expressionList";
             XmlNode expressionList = subroutineNode.SelectSingleNode(xPath);
+
+            string text = subroutineNode.InnerText;
+            int openBrackIdx = text.IndexOf("(");
+            string fName = text.Substring(0, openBrackIdx);
+
+            FunctionType fType = GetFunctionTypeByName(fName);
+            if (fType == FunctionType.Method)
+            {
+                VMCodeWriter.WritePushStetment(Segments.pointer,0);
+            }
+
+            int argCount = 0;
             if (expressionList != null)
             {
                 for (int i = 0; i < expressionList.ChildNodes.Count; i++)
@@ -763,18 +797,13 @@ namespace JackParser
                     XmlNode expressionNode = expressionList.ChildNodes[i];
                     if (expressionNode.Name == "expression")
                     {
+                        argCount++;
                         ExpressionNodeToVmCode(expressionNode);
                     }
                 }
             }
 
-            string text = subroutineNode.InnerText;
-            int openBrackIdx = text.IndexOf("(");
-
-            string fName = text.Substring(0, openBrackIdx);
-
-
-            VMCodeWriter.WriteCallFunction(fName, expressionList.ChildNodes.Count);
+            VMCodeWriter.WriteCallFunction(fName, argCount);
         }
 
       
@@ -1234,7 +1263,7 @@ namespace JackParser
     class VmCodeChangedArgs : EventArgs
     {
         public string vm_code;
-
+        public string delta;
     }
 
     public class FunctionTypeEventArgs : EventArgs
