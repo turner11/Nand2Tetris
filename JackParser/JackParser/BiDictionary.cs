@@ -13,13 +13,26 @@ namespace JackParser
 
         public void Add(TFirst first, TSecond second)
         {
-            if (firstToSecond.ContainsKey(first) ||
+            try
+            {
+
+                bool stop = first.ToString() == "kRight" && second.ToString() == "int";
+                if (stop)
+                {
+                   // System.Diagnostics.Debugger.Break();
+                }
+            if (firstToSecond.ContainsKey(first) &&
                 secondToFirst.ContainsKey(second))
             {
                 throw new ArgumentException("Duplicate first or second");
             }
             firstToSecond.Add(first, second);
             secondToFirst.Add(second, first);
+            }
+            catch (Exception)
+            {
+
+            }
         }
 
         public bool TryGetByFirst(TFirst first, out TSecond second)

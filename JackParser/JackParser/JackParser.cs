@@ -22,6 +22,7 @@ namespace JackParser
         static string _DEBUG_xmlString;
         static int _DEBUG_xmlRowNumber = 0;
         static XmlDocument tokens = new XmlDocument();
+        internal static string _fileName;
 
 
         #region Internal Methods
@@ -36,7 +37,8 @@ namespace JackParser
             {
                 XmlDocument currTokens = tokensTuple.Item2;
                 string fileName = tokensTuple.Item1;
-               
+               //for debug
+                JackParser._fileName = fileName;
                 try
                 {
                     JackParser.tokens = currTokens;
@@ -343,7 +345,8 @@ namespace JackParser
             /*var type------------------------------------------------------------------------*/
             XmlNode varTypeToken = JackParser.GetNextToken(tokensDoc);
 
-            List<string> possibleTexts = JackParser.GetValidTypeName(varTypeToken.InnerText);
+            string varType = varTypeToken.InnerText;
+            List<string> possibleTexts = JackParser.GetValidTypeName(varType);
 
             JackParser.AddToken(rootVarDec, varTypeToken, possibleTexts, new List<Enum> { TokenTypes.identifier, TokenTypes.keyword }, OutputStructureNodes.type.ToStringByDescription());
             //token was handled, remove it
@@ -361,7 +364,7 @@ namespace JackParser
                 /*Not valid name; quit*/
                 if (!isvalidName) { throw new Exception(String.Format("variable name {0} is not valid", varNameToken.InnerText)); }                
                 JackParser.AddToken(rootVarDec, varNameToken, String.Empty, TokenTypes.identifier, null);
-                VMCodeWriter.AddVariablbe(tKeyWordModifier.InnerText, varNameToken.InnerText, false);
+                VMCodeWriter.AddVariablbe(tKeyWordModifier.InnerText, varNameToken.InnerText, false, varType);
                 //token was handled, remove it
                 JackParser.RemoveFirstToken(tokensDoc);
 
@@ -827,7 +830,7 @@ namespace JackParser
                     JackParser.RemoveFirstToken(tokensDoc);
                     paramCount++;
 
-                    VMCodeWriter.AddVariablbe(String.Empty, varName,true);
+                    VMCodeWriter.AddVariablbe(String.Empty, varName, true, String.Empty);
                     if (JackParser.GetFirstTokenText(tokensDoc) == ",")
                     {
                         isMultipleVars = true;
