@@ -58,7 +58,6 @@ namespace JackParser
                     string xmlStr = JackParser.GetCleanJackXmlStringFromTokens(currTokens);
                     Tuple<string, string> vmTuple = new Tuple<string, string>(fileName, VMCodeWriter.VmCode);
                     vmCode.Add(vmTuple);
-                    VMCodeWriter.Init();
 
 
                     /*string[] tmp = fileName.Split('.');
@@ -79,6 +78,7 @@ namespace JackParser
                 }
                 finally
                 {
+                    VMCodeWriter.Init();
                 }
                 
                 
@@ -94,7 +94,8 @@ namespace JackParser
 
         private static FunctionType GetFunctionType(string name, XmlDocument tokensDoc)
         {
-            XmlNodeList nodes = tokensDoc.FirstChild.SelectNodes(String.Format("identifier[text()='{0}']",name));
+            XmlNodeList nodes = 
+                tokensDoc.FirstChild.SelectNodes(String.Format("identifier[text()='{0}']", name.Replace("(",String.Empty).Replace(")",String.Empty)));
             FunctionType[] ftypes = Enum.GetValues(typeof(FunctionType)).OfType<FunctionType>().ToArray();
             foreach (XmlNode node in nodes)
             {
@@ -830,7 +831,7 @@ namespace JackParser
                     JackParser.RemoveFirstToken(tokensDoc);
                     paramCount++;
 
-                    VMCodeWriter.AddVariablbe(String.Empty, varName, true, String.Empty);
+                    VMCodeWriter.AddVariablbe(String.Empty, varName, true, varTypeToken.InnerText ?? String.Empty);
                     if (JackParser.GetFirstTokenText(tokensDoc) == ",")
                     {
                         isMultipleVars = true;
@@ -917,7 +918,7 @@ namespace JackParser
                 {
                     XmlNode classOrVarNameNode = JackParser.GetNextToken(tokensDoc);
                     string nextText = JackParser.GetFirstTokenText(tokensDoc);
-                    bool isValidName = JackParser.IsIdentifier(nextText);
+                    bool isValidName = JackParser.IsIdentifier(nextText) || JackParser.IsClassName(nextText);
 
                     if (!isValidName) { throw new Exception("Invalid name for subroutine caller"); }
 
@@ -1235,8 +1236,8 @@ namespace JackParser
         {
 
             if (JackParser.IsNextNodeTerm_Array(tokensDoc)) { return TermTypes.Array; }//should be before var name
+            if (JackParser.IsNextNodeTerm_stringConstant(tokensDoc)) { return TermTypes.stringConstant; }//should be before int const
             if (JackParser.IsNextNodeTerm_integerConstant(tokensDoc)) { return TermTypes.integerConstant; }
-            if (JackParser.IsNextNodeTerm_stringConstant(tokensDoc)) { return TermTypes.stringConstant; }
             if (JackParser.IsNextNodeTerm_keywordConstant(tokensDoc)) { return TermTypes.keywordConstant; }
             if (JackParser.IsNextNodeTerm_subRoutineCall(tokensDoc)) { return TermTypes.subRoutineCall; }//should be before var name
             if (JackParser.IsNextNodeTerm_varName(tokensDoc)) { return TermTypes.varName; }            
@@ -1511,7 +1512,7 @@ namespace JackParser
         /// </returns>
         private static bool IsClassName(string candidate)
         {
-            return JackParser.IsIdentifier(candidate);
+            return JackParser.IsIdentifier(candidate) || /*this is for String.Append...*/ SymbolClassifications._variablesTypes.Contains(candidate);
         }
         /// <summary>
         /// Determines whether the specified candidate is legal class name.
@@ -1595,8 +1596,11 @@ namespace JackParser
             Regex regex = new Regex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.None);
             bool isLegalIdentifier = regex.Match(cleanCandidate).Success;
 
+           
             //makes sense that a keyword cannot be an identifer, but it does not seem to be the case according to class PPT
-            isLegalIdentifier &= !SymbolClassifications._allKeyWords.Contains(cleanCandidate);
+            isLegalIdentifier &= 
+                (!SymbolClassifications._allKeyWords.Contains(cleanCandidate));
+                
 
             return isLegalIdentifier;
         }
@@ -1748,18 +1752,24 @@ namespace JackParser
                 return false;
             }
             bool isStringConst = true;
-            bool allValidChars = false;
+            bool allValidChars = true;
             bool isMarkedStrConstant = node.Name == "stringConstant";
             string text = JackParser.GetFirstTokenText(tokensDoc);
-            try
-            {                
-                char[] disallowdChars = new char[] { '\n', '\"' };
-                allValidChars = text.IndexOfAny(disallowdChars, 1, text.Length - 1) < 0;
-            }
-            catch (Exception)
+
+            if (isMarkedStrConstant && text.Length > 0)
             {
 
-                isStringConst = false;
+
+                try
+                {
+                    char[] disallowdChars = new char[] { '\n', '\"' };
+                    allValidChars = text.IndexOfAny(disallowdChars, 1, text.Length - 1) < 0;
+                }
+                catch (Exception)
+                {
+
+                    isStringConst = false;
+                }
             }
             isStringConst &= allValidChars && isMarkedStrConstant;
             return isStringConst;

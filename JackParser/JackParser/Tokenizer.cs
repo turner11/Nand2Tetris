@@ -33,6 +33,8 @@ namespace Ex2
                     str = recursiveTokenize(str);
                     str = "<tokens>" + Environment.NewLine + str + Environment.NewLine + "</tokens>";
 
+                    str = str.Replace("<stringConstant>", "<stringConstant><![CDATA[").Replace("</stringConstant>", "]]></stringConstant>");
+                    str.Replace("<stringConstant><![CDATA[ ]]></stringConstant>",String.Empty);
                     XmlDocument tokens = new XmlDocument();
                     tokens.LoadXml(str);
                     Tuple<string,XmlDocument> tple= new Tuple<string,XmlDocument>(fileName,tokens);

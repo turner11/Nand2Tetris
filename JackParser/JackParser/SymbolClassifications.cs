@@ -26,7 +26,7 @@ namespace JackParser
             new List<String> { "var" });
 
         internal static ReadOnlyCollection<string> _variablesTypes = new ReadOnlyCollection<string>(
-            new List<String> { "int", "char", "boolean" });
+            new List<String> { "int", "char", "boolean","String" });
 
         internal static ReadOnlyCollection<string> _subRoutineReturnType;
 
