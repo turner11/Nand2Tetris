@@ -32,7 +32,12 @@ namespace Assembler
             {
                 String[] hackStr = File.ReadAllLines(path);
                 Assembler asm = new Assembler(hackStr);
+                
                 string assemblyCode = asm.GetAssemblyCode();
+
+                string fileName = Path.Combine(System.IO.Path.GetDirectoryName(path), Path.GetFileNameWithoutExtension(path)) + ".hack";
+                
+                File.WriteAllText(fileName, assemblyCode);
             }
             catch (Exception e)
             {
