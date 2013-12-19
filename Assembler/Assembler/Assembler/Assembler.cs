@@ -20,6 +20,7 @@ namespace Assembler
 
         const int VARIABLE_BASE_ADDRESS = 16;
         const int BINARY_ROW_LENGTH = 16;
+        int VAR_OFFSET_COMPANSATION; //compensating for vars offset due to adding SP this etc...
                 
         Dictionary<string, int> _varAddressByName;
         Dictionary<string, int> _LabelAddressByName;
@@ -61,6 +62,9 @@ namespace Assembler
             this._varAddressByName.Add("ARG", 2);
             this._varAddressByName.Add("THIS", 3);
             this._varAddressByName.Add("THAT", 4);
+            this._varAddressByName.Add("SCREEN", 16384);
+
+            VAR_OFFSET_COMPANSATION = this._varAddressByName.Keys.Count * -1;
         } 
         #endregion
 
@@ -94,8 +98,8 @@ namespace Assembler
         {
             this.Init();
             string[] hackCode = this._hackLines.ToArray();
-            string[] noLabelsHack = this.GetHackWithNoLabels(hackCode);
-            string[] noVariablesHack = this.GetHackWithNoVariables(noLabelsHack);
+            string[] noLabelsHack = this.GetHackWithNoLabels((string[])hackCode.Clone());
+            string[] noVariablesHack = this.GetHackWithNoVariables((string[])noLabelsHack.Clone());
 
             string asm = GetAssemblyCodeInternal(noVariablesHack);
             return asm;
@@ -109,6 +113,7 @@ namespace Assembler
         private string[] GetHackWithNoLabels(string[] hackCode)
         {
             List<string> nolblHack = new List<string>();
+            int countLabels = 0;
             for (int i = 0; i < hackCode.Length; i++)
             {
                 string hackLine = hackCode[i].Trim();
@@ -116,7 +121,8 @@ namespace Assembler
                 if (isLbl)
                 {
                     string lblName = hackLine.Substring(1, hackLine.Length - 2);
-                    int lblAddress = i + 1;// label address is always next line...
+                    int lblAddress = i - countLabels;// label address is always next line...
+                    countLabels++;
                     this._LabelAddressByName.Add(lblName, lblAddress);
                     
                     hackLine = String.Empty;
@@ -127,7 +133,7 @@ namespace Assembler
 
             for (int i = 0; i < nolblHack.Count; i++)
             {
-                string hackLine = hackCode[i].Trim();
+                string hackLine = nolblHack[i].Trim();
                 if (hackLine.StartsWith("@"))
                 {
                     string potentialLabel = hackLine.Substring(1, hackLine.Length - 1);
@@ -201,7 +207,7 @@ namespace Assembler
             {
                 //add the address
                 int offset = this._varAddressByName.Keys.Count;
-                variableAddress = Assembler.VARIABLE_BASE_ADDRESS + offset;
+                variableAddress = Assembler.VARIABLE_BASE_ADDRESS + offset + VAR_OFFSET_COMPANSATION;
                 this._varAddressByName.Add(varName, variableAddress);
            
             }
@@ -223,8 +229,13 @@ namespace Assembler
             {
                 string hackLine = noVariablesHack[i];
                 string currAssemblyCode = this.GetAssemblyCodeByLine(hackLine);
-                assembly += (currAssemblyCode + Environment.NewLine);//.Trim(); //the trim will remove empty lines
+                assembly += (Environment.NewLine + currAssemblyCode);
+                assembly = assembly.Trim();
             }
+
+            Regex cleaner = new Regex(Environment.NewLine + "+");
+            assembly = cleaner.Replace(assembly, Environment.NewLine);
+            assembly += Environment.NewLine;
             return assembly;
         }
 
@@ -249,6 +260,9 @@ namespace Assembler
                 case LineTypes.Comment:
                 case LineTypes.Empty:
                     asmLine = String.Empty;
+                    break;
+                case LineTypes.Assembly:
+                    asmLine = hackLine;
                     break;
                 default:
                     this.ThrowException("Unknonw line type: " + lType);
@@ -329,7 +343,7 @@ namespace Assembler
             }
             else
             {
-                dest = "111";
+                dest = "000";
             }
 
             bool hasJump = hackLine.Contains(";");
@@ -500,8 +514,8 @@ namespace Assembler
             Acommand = 1,
             Dcommand = 2,
             Comment = 3,
-            Assembly = 3,
-            Empty = 4
+            Assembly = 4,
+            Empty = 5
         } 
         #endregion
 
